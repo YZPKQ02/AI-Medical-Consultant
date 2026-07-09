@@ -1,0 +1,138 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>AI Medical Consultant</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <main class="app-shell">
+      <aside class="sidebar" aria-label="问诊工作区">
+        <section class="brand">
+          <div class="brand-mark">+</div>
+          <div>
+            <h1>AI Medical Consultant</h1>
+            <p>智能医疗问诊辅助</p>
+          </div>
+        </section>
+
+        <section class="panel compact">
+          <div class="section-title">
+            <h2>患者信息</h2>
+            <span id="profileStatus" class="badge neutral">未建档</span>
+          </div>
+          <label>
+            年龄
+            <input id="ageInput" type="number" min="0" max="120" placeholder="例如 32" />
+          </label>
+          <label>
+            性别
+            <select id="genderInput">
+              <option value="">未填写</option>
+              <option value="女">女</option>
+              <option value="男">男</option>
+              <option value="其他">其他</option>
+            </select>
+          </label>
+          <label>
+            过敏史
+            <input id="allergyInput" type="text" placeholder="例如 青霉素过敏" />
+          </label>
+          <label>
+            慢性病
+            <input id="chronicInput" type="text" placeholder="例如 高血压、糖尿病" />
+          </label>
+          <button id="startWithProfileButton" class="utility-button" type="button">用资料建立问诊</button>
+          <p class="microcopy">资料会随新问诊一起提交，用于风险分层和追问。</p>
+        </section>
+
+        <section class="panel">
+          <div class="section-title">
+            <h2>会话历史</h2>
+            <button id="refreshHistoryButton" class="icon-button" type="button" aria-label="刷新会话历史">↻</button>
+          </div>
+          <div id="consultationList" class="history-list">
+            <p class="muted">还没有问诊记录。</p>
+          </div>
+        </section>
+
+        <section class="panel">
+          <h2>知识库检索</h2>
+          <form id="knowledgeSearchForm" class="mini-form">
+            <input id="knowledgeQueryInput" type="search" placeholder="例如 胸痛、发热、用药安全" />
+            <button type="submit">检索</button>
+          </form>
+          <div id="knowledgeResults" class="source-list compact-list">
+            <p class="muted">可先检索知识库，再决定如何追问患者。</p>
+          </div>
+        </section>
+
+        <section class="panel">
+          <div class="section-title">
+            <h2>当前分诊</h2>
+            <span id="urgencyBadge" class="badge neutral">未评估</span>
+          </div>
+          <dl class="triage-list">
+            <div>
+              <dt>建议科室</dt>
+              <dd id="departmentValue">等待问诊</dd>
+            </div>
+            <div>
+              <dt>识别症状</dt>
+              <dd id="symptomValue">暂无</dd>
+            </div>
+            <div>
+              <dt>是否急症</dt>
+              <dd id="urgentValue">暂无</dd>
+            </div>
+          </dl>
+        </section>
+
+        <section class="panel">
+          <h2>知识来源</h2>
+          <div id="sourceList" class="source-list">
+            <p class="muted">回答后会显示检索到的医学知识片段。</p>
+          </div>
+        </section>
+      </aside>
+
+      <section class="workspace" aria-label="问诊对话">
+        <header class="workspace-header">
+          <div>
+            <p class="eyebrow">RAG + Agent Prototype</p>
+            <h2>多轮智能问诊</h2>
+          </div>
+          <button id="newConsultationButton" class="secondary-button" type="button">新问诊</button>
+        </header>
+
+        <div id="messageList" class="message-list" aria-live="polite">
+          <article class="message assistant">
+            <div class="avatar">AI</div>
+            <div class="bubble">
+              <p>你好，我可以帮你整理症状、判断紧急程度并给出就诊建议。请描述主要不适，例如“发热两天伴咳嗽”或“胸痛伴呼吸困难”。</p>
+              <p class="disclaimer">本系统仅用于健康信息辅助，不能替代专业医生诊断。</p>
+            </div>
+          </article>
+        </div>
+
+        <form id="consultationForm" class="composer">
+          <div class="composer-box">
+            <textarea
+              id="messageInput"
+              rows="3"
+              placeholder="请输入症状、持续时间、伴随表现、既往病史..."
+              required
+            ></textarea>
+            <button id="sendButton" type="submit">发送</button>
+          </div>
+          <div class="composer-actions">
+            <div class="hint">Enter 发送，Ctrl + Shift + Enter 换行。危险信号如胸痛、呼吸困难、意识不清，请立即线下就医。</div>
+          </div>
+        </form>
+      </section>
+    </main>
+
+    <script type="module" src="/app.js"></script>
+  </body>
+</html>

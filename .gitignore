@@ -1,0 +1,9 @@
+__pycache__/
+*.py[cod]
+server.log
+server.err
+storage/*.json
+.env
+node_modules/
+.venv/
+.tools/

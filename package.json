@@ -1,0 +1,23 @@
+{
+  "name": "ai-medical-consultant",
+  "version": "0.1.0",
+  "description": "A Python-first AI medical consultant prototype with local RAG-style knowledge retrieval.",
+  "type": "module",
+  "scripts": {
+    "start": ".venv\\Scripts\\python.exe -m app.fastapi_runner",
+    "dev": ".venv\\Scripts\\python.exe -m app.fastapi_runner",
+    "legacy": ".venv\\Scripts\\python.exe -u run.py",
+    "vectorize": ".venv\\Scripts\\python.exe -m scripts.vectorize_documents",
+    "test": "node --test tests/*.test.js && .venv\\Scripts\\python.exe -m unittest discover -s tests -p \"test_*.py\""
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "keywords": [
+    "medical",
+    "consultation",
+    "rag",
+    "triage"
+  ],
+  "license": "MIT"
+}

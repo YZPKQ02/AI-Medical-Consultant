@@ -1,0 +1,9 @@
+langchain-core>=1.2,<1.4
+fastapi>=0.118,<1.0
+uvicorn[standard]>=0.36,<1.0
+
+# Most runtime paths still work without optional provider dependencies.
+# Qwen provider is scaffolded but runs with a hash fallback until you approve
+# adding production dependencies such as sentence-transformers, transformers,
+# torch, accelerate, pillow, and qwen-vl-utils.
+# Future production dependencies can add FAISS/ChromaDB, PostgreSQL, and local Qwen runtimes.
