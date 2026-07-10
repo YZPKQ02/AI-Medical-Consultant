@@ -182,7 +182,6 @@ textarea:focus {
 
 .utility-button,
 .icon-button,
-.mini-form button,
 .history-button,
 .history-delete-button,
 .secondary-button,
@@ -200,7 +199,6 @@ textarea:focus {
 }
 
 .utility-button:hover,
-.mini-form button:hover,
 .composer button:hover {
   background: var(--primary-dark);
 }
@@ -290,10 +288,6 @@ textarea:focus {
   gap: 10px;
 }
 
-.compact-list {
-  margin-top: 12px;
-}
-
 .source-item {
   padding: 12px;
   border: 1px solid #dfe6ee;
@@ -320,6 +314,10 @@ textarea:focus {
   color: var(--muted);
   font-size: 13px;
   line-height: 1.6;
+}
+
+.hospital-item p + p {
+  margin-top: 5px;
 }
 
 .history-list {
@@ -374,18 +372,6 @@ textarea:focus {
 
 .history-delete-button:hover {
   background: #ffe8e5;
-}
-
-.mini-form {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) 72px;
-  gap: 8px;
-}
-
-.mini-form button {
-  height: 40px;
-  background: var(--primary);
-  color: white;
 }
 
 .workspace {

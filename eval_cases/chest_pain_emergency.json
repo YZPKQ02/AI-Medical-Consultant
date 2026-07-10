@@ -1,0 +1,15 @@
+{
+  "id": "chest_pain_emergency",
+  "message": "胸痛伴呼吸困难和大汗，已经持续30分钟",
+  "user_context": {
+    "age": "56",
+    "city": "杭州"
+  },
+  "assertions": {
+    "needs_urgent_care": true,
+    "risk_level_min": 4,
+    "department_contains": "急诊",
+    "content_contains": ["急症风险", "急诊"],
+    "tool_status_in": ["available", "unavailable"]
+  }
+}

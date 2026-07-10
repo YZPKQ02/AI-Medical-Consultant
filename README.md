@@ -59,6 +59,13 @@ run.py
 The default runtime now uses the FastAPI entrypoint at `app/fastapi_main.py`.
 The app reuses the same `ConsultationService`, Agent, and RAG pipeline as the
 legacy server, so the migration path does not fork business logic.
+Consultation history is persisted locally through SQLite at
+`storage/consultations.sqlite3` by default. Override it with
+`CONSULTATION_STORE_PATH` when needed.
+The frontend also sends an anonymous `X-User-Id` generated in localStorage, and
+the backend scopes consultation list/detail/delete/message operations by that
+owner. This is not a full authentication system, but it prevents different
+browsers from sharing the same medical consultation history during local use.
 
 Equivalent FastAPI command:
 
@@ -102,10 +109,78 @@ $env:PORT=3001
 npm.cmd start
 ```
 
+## Hospital Recommendation MCP
+
+The Agent can optionally recommend city-specific hospital department candidates
+through AMap's official Streamable HTTP MCP server. The frontend only collects
+the user's current city and displays the Agent's recommendations; users do not
+directly search the map or hospital database.
+
+Required environment variables:
+
+```powershell
+$env:HOSPITAL_RECOMMENDER_ENABLED="1"
+$env:AMAP_MCP_URL="https://mcp.amap.com/mcp?key=<your amap key>"
+$env:HOSPITAL_RECOMMENDER_LIMIT="5"
+$env:HOSPITAL_RECOMMENDER_TIMEOUT_SECONDS="5"
+```
+
+The previous Web Service POI path remains as a compatibility fallback when
+`AMAP_MCP_URL` is not configured:
+
+```powershell
+$env:AMAP_WEB_SERVICE_KEY="<your amap web service key>"
+```
+
+Local domain MCP wrapper for offline development or integration tests:
+
+```powershell
+.\.venv\Scripts\python.exe -m app.mcp.hospital_recommender_server
+```
+
+The recommendation tool sends only city and department search terms to AMap. It
+does not send age, allergy history, chronic disease history, or the full
+conversation text.
+
+Unified medical toolbox MCP server:
+
+```powershell
+npm run mcp:medical
+```
+
+This server exposes:
+
+- `search_medical_knowledge`
+- `check_drug_safety`
+- `recommend_hospitals`
+
+## Internal Agent Toolbox
+
+The Agent uses an internal MCP-style toolbox in `app/agents/toolbox.py`. Users do
+not call these tools directly from the frontend; the Agent decides when to invoke
+them from the current intent, symptoms, risk level, department, and patient
+context.
+
+Current internal tools:
+
+- `search_medical_knowledge`: retrieves local RAG knowledge and records source evidence.
+- `check_drug_safety`: runs first-pass medication safety checks for allergy, missing context, and risky self-medication patterns.
+- `recommend_hospitals`: calls the hospital recommendation service, backed by AMap MCP when configured.
+
+Each tool execution is written to `analysis.tool_results` and
+`analysis.agent_state.tool_results`, so a turn can be audited without exposing
+extra frontend tool controls.
+
 ## Test
 
 ```bash
 npm test
+```
+
+Run offline Agent evaluation cases:
+
+```bash
+npm run eval
 ```
 
 ## Vectorize Documents
@@ -182,8 +257,8 @@ Optional FastAPI v1 routes:
 ## Next Steps
 
 - Replace the standard-library hash multimodal retriever with Qwen-VL/Qwen Embedding, BioMedCLIP, SentenceTransformer + FAISS, or ChromaDB.
-- Add persistent storage behind `ConsultationService`, starting with SQLite for local development and PostgreSQL for deployment.
-- Add persistent storage with PostgreSQL.
+- Add a PostgreSQL-backed consultation store for deployment.
+- Replace anonymous local owner IDs with authenticated users and role-based access.
 - Expand the LLM provider layer with streaming SSE/WebSocket output.
 
 ## RAG Pipeline

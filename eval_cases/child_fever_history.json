@@ -1,0 +1,15 @@
+{
+  "id": "child_fever_history",
+  "message": "孩子发热咳嗽2天，体温38.5度",
+  "user_context": {
+    "city": "上海"
+  },
+  "assertions": {
+    "needs_urgent_care": false,
+    "risk_level_min": 2,
+    "department_contains": "感染",
+    "follow_up_contains": ["患者年龄是多少？"],
+    "content_contains": ["建议科室"],
+    "tool_status_in": ["available", "unavailable"]
+  }
+}

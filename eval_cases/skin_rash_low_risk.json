@@ -1,0 +1,14 @@
+{
+  "id": "skin_rash_low_risk",
+  "message": "手臂皮疹有点痒，没有呼吸困难",
+  "user_context": {
+    "age": "32"
+  },
+  "assertions": {
+    "needs_urgent_care": false,
+    "risk_level_min": 1,
+    "department_contains": "皮肤",
+    "follow_up_contains": ["你当前所在城市是哪里？"],
+    "tool_status_in": ["missing_city"]
+  }
+}

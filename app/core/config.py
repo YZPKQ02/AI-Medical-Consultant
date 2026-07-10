@@ -1,6 +1,7 @@
 from dataclasses import dataclass
 import os
 from pathlib import Path
+from urllib.parse import parse_qs, urlparse
 
 
 @dataclass(frozen=True)
@@ -12,6 +13,7 @@ class Settings:
     cors_origins: tuple[str, ...] = ("http://127.0.0.1:3000", "http://localhost:3000")
     rag_top_k: int = 3
     rag_index_path: str = "storage/vector_index.json"
+    consultation_store_path: str = "storage/consultations.sqlite3"
     embedding_provider: str = "qwen"
     qwen_text_embedding_model: str = "Qwen/Qwen3-Embedding-0.6B"
     qwen_vision_embedding_model: str = "Qwen/Qwen3-VL-Embedding"
@@ -24,6 +26,11 @@ class Settings:
     llm_top_p: float = 0.9
     llm_max_tokens: int = 1400
     llm_timeout_seconds: int = 30
+    hospital_recommender_enabled: bool = False
+    amap_mcp_url: str = ""
+    amap_web_service_key: str = ""
+    hospital_recommender_limit: int = 5
+    hospital_recommender_timeout_seconds: int = 5
 
 
 def get_settings() -> Settings:
@@ -35,6 +42,9 @@ def get_settings() -> Settings:
         ),
         rag_top_k=int(os.getenv("RAG_TOP_K", "3")),
         rag_index_path=os.getenv("RAG_INDEX_PATH", "storage/vector_index.json"),
+        consultation_store_path=os.getenv(
+            "CONSULTATION_STORE_PATH", "storage/consultations.sqlite3"
+        ),
         embedding_provider=os.getenv("EMBEDDING_PROVIDER", "qwen"),
         qwen_text_embedding_model=os.getenv("QWEN_TEXT_EMBEDDING_MODEL", "Qwen/Qwen3-Embedding-0.6B"),
         qwen_vision_embedding_model=os.getenv("QWEN_VISION_EMBEDDING_MODEL", "Qwen/Qwen3-VL-Embedding"),
@@ -47,11 +57,26 @@ def get_settings() -> Settings:
         llm_top_p=float(os.getenv("LLM_TOP_P", "0.9")),
         llm_max_tokens=int(os.getenv("LLM_MAX_TOKENS", "1400")),
         llm_timeout_seconds=int(os.getenv("LLM_TIMEOUT_SECONDS", "30")),
+        hospital_recommender_enabled=os.getenv("HOSPITAL_RECOMMENDER_ENABLED", "0").lower()
+        in {"1", "true", "yes"},
+        amap_mcp_url=os.getenv("AMAP_MCP_URL", ""),
+        amap_web_service_key=os.getenv("AMAP_WEB_SERVICE_KEY", "")
+        or extract_amap_key_from_mcp_url(os.getenv("AMAP_MCP_URL", "")),
+        hospital_recommender_limit=int(os.getenv("HOSPITAL_RECOMMENDER_LIMIT", "5")),
+        hospital_recommender_timeout_seconds=int(os.getenv("HOSPITAL_RECOMMENDER_TIMEOUT_SECONDS", "5")),
     )
 
 
 def parse_csv_env(value: str) -> tuple[str, ...]:
     return tuple(item.strip() for item in str(value or "").split(",") if item.strip())
+
+
+def extract_amap_key_from_mcp_url(value: str) -> str:
+    query = parse_qs(urlparse(str(value or "")).query)
+    key = (query.get("key") or [""])[0].strip()
+    if not key or key.startswith("<"):
+        return ""
+    return key
 
 
 def load_env_file(path: str | Path = ".env") -> None:

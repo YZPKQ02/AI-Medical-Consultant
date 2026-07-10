@@ -1,6 +1,7 @@
 const state = {
   consultationId: null,
-  isLoading: false
+  isLoading: false,
+  userId: getClientUserId()
 };
 
 const elements = {
@@ -16,15 +17,14 @@ const elements = {
   sourceList: document.querySelector("#sourceList"),
   ageInput: document.querySelector("#ageInput"),
   genderInput: document.querySelector("#genderInput"),
+  cityInput: document.querySelector("#cityInput"),
   allergyInput: document.querySelector("#allergyInput"),
   chronicInput: document.querySelector("#chronicInput"),
   profileStatus: document.querySelector("#profileStatus"),
   startWithProfileButton: document.querySelector("#startWithProfileButton"),
   refreshHistoryButton: document.querySelector("#refreshHistoryButton"),
   consultationList: document.querySelector("#consultationList"),
-  knowledgeSearchForm: document.querySelector("#knowledgeSearchForm"),
-  knowledgeQueryInput: document.querySelector("#knowledgeQueryInput"),
-  knowledgeResults: document.querySelector("#knowledgeResults")
+  hospitalList: document.querySelector("#hospitalList")
 };
 
 elements.form.addEventListener("submit", async (event) => {
@@ -47,6 +47,7 @@ elements.form.addEventListener("submit", async (event) => {
 
     appendMessage("assistant", response.assistant_message.content);
     renderTriage(response.assistant_message.analysis);
+    renderHospitals(response.assistant_message.analysis?.hospital_recommendations || null);
     renderSources(response.assistant_message.source_knowledge);
     await refreshConsultations();
   } catch (error) {
@@ -94,18 +95,6 @@ elements.startWithProfileButton.addEventListener("click", async () => {
 
 elements.refreshHistoryButton.addEventListener("click", refreshConsultations);
 
-elements.knowledgeSearchForm.addEventListener("submit", async (event) => {
-  event.preventDefault();
-  const query = elements.knowledgeQueryInput.value.trim();
-  await searchKnowledge(query);
-});
-
-elements.knowledgeQueryInput.addEventListener("input", () => {
-  if (!elements.knowledgeQueryInput.value.trim()) {
-    clearKnowledgeResults();
-  }
-});
-
 elements.input.addEventListener("keydown", (event) => {
   if (event.key !== "Enter" || event.isComposing) {
     return;
@@ -124,6 +113,7 @@ elements.input.addEventListener("keydown", (event) => {
 for (const input of [
   elements.ageInput,
   elements.genderInput,
+  elements.cityInput,
   elements.allergyInput,
   elements.chronicInput
 ]) {
@@ -179,6 +169,7 @@ async function openConsultation(consultationId) {
     if (!consultation.messages || consultation.messages.length === 0) {
       appendMessage("assistant", "已打开这个问诊档案，但还没有对话记录。");
       renderTriage(null);
+      renderHospitals(null);
       renderSources([]);
     } else {
       for (const message of consultation.messages) {
@@ -186,6 +177,7 @@ async function openConsultation(consultationId) {
       }
       const lastAssistant = [...consultation.messages].reverse().find((message) => message.role === "assistant");
       renderTriage(lastAssistant?.analysis || null);
+      renderHospitals(lastAssistant?.analysis?.hospital_recommendations || null);
       renderSources(lastAssistant?.source_knowledge || []);
     }
 
@@ -218,39 +210,6 @@ async function deleteConsultation(consultationId, title) {
   }
 }
 
-async function searchKnowledge(query) {
-  if (!query) {
-    clearKnowledgeResults();
-    return;
-  }
-
-  elements.knowledgeResults.innerHTML = "";
-  const loading = document.createElement("p");
-  loading.className = "muted";
-  loading.textContent = "正在检索知识库...";
-  elements.knowledgeResults.append(loading);
-
-  try {
-    const path = `/api/knowledge?q=${encodeURIComponent(query)}`;
-    const response = await api(path);
-    renderKnowledgeResults(response.results || []);
-  } catch (error) {
-    elements.knowledgeResults.innerHTML = "";
-    const failed = document.createElement("p");
-    failed.className = "muted";
-    failed.textContent = `检索失败：${error.message}`;
-    elements.knowledgeResults.append(failed);
-  }
-}
-
-function clearKnowledgeResults() {
-  elements.knowledgeResults.innerHTML = "";
-  const empty = document.createElement("p");
-  empty.className = "muted";
-  empty.textContent = "输入关键词后检索知识库。";
-  elements.knowledgeResults.append(empty);
-}
-
 function insertTextAtCursor(input, text) {
   const start = input.selectionStart;
   const end = input.selectionEnd;
@@ -266,6 +225,7 @@ async function api(path, options = {}) {
   const response = await fetch(path, {
     headers: {
       "content-type": "application/json",
+      "x-user-id": state.userId,
       ...(options.headers ?? {})
     },
     ...options
@@ -278,10 +238,25 @@ async function api(path, options = {}) {
   return payload;
 }
 
+function getClientUserId() {
+  const storageKey = "ai_medical_consultant_user_id";
+  const existing = window.localStorage.getItem(storageKey);
+  if (existing) {
+    return existing;
+  }
+
+  const generated = window.crypto?.randomUUID
+    ? window.crypto.randomUUID()
+    : `anon_${Date.now()}_${Math.random().toString(36).slice(2)}`;
+  window.localStorage.setItem(storageKey, generated);
+  return generated;
+}
+
 function collectUserContext() {
   return {
     age: elements.ageInput.value.trim(),
     gender: elements.genderInput.value,
+    city: elements.cityInput.value.trim(),
     allergies: elements.allergyInput.value.trim(),
     chronic_diseases: elements.chronicInput.value.trim()
   };
@@ -290,6 +265,7 @@ function collectUserContext() {
 function hydrateProfile(profile) {
   elements.ageInput.value = profile.age || "";
   elements.genderInput.value = profile.gender || "";
+  elements.cityInput.value = profile.city || "";
   elements.allergyInput.value = profile.allergies || "";
   elements.chronicInput.value = profile.chronic_diseases || "";
 }
@@ -302,6 +278,7 @@ function resetWorkspace({ message, keepSession = false }) {
   elements.messageList.innerHTML = "";
   appendMessage("assistant", message);
   renderTriage(null);
+  renderHospitals(null);
   renderSources([]);
   renderConsultationsSelection();
 }
@@ -345,8 +322,44 @@ function renderSources(sources) {
   renderSourceItems(elements.sourceList, sources, "暂无匹配知识来源。");
 }
 
-function renderKnowledgeResults(results) {
-  renderSourceItems(elements.knowledgeResults, results, "未检索到匹配知识。");
+function renderHospitals(hospitalRecommendations) {
+  elements.hospitalList.innerHTML = "";
+
+  const recommendations = hospitalRecommendations?.recommendations || [];
+  if (recommendations.length === 0) {
+    const empty = document.createElement("p");
+    empty.className = "muted";
+    if (hospitalRecommendations?.status === "missing_city") {
+      empty.textContent = "填写当前城市后，Agent 会结合建议科室推荐医院候选。";
+    } else if (hospitalRecommendations?.status === "unavailable") {
+      empty.textContent = "医院推荐服务暂不可用，请根据建议科室自行核实当地医院。";
+    } else {
+      empty.textContent = "本次回答暂无医院推荐。";
+    }
+    elements.hospitalList.append(empty);
+    return;
+  }
+
+  for (const hospital of recommendations) {
+    const item = document.createElement("article");
+    item.className = "source-item hospital-item";
+
+    const title = document.createElement("strong");
+    title.textContent = hospital.name;
+
+    const meta = document.createElement("span");
+    meta.className = "source-meta";
+    meta.textContent = [hospital.matched_department, hospital.district].filter(Boolean).join(" · ");
+
+    const address = document.createElement("p");
+    address.textContent = hospital.address || "地址待核实";
+
+    const reason = document.createElement("p");
+    reason.textContent = hospital.reason;
+
+    item.append(title, meta, address, reason);
+    elements.hospitalList.append(item);
+  }
 }
 
 function renderSourceItems(container, sources, emptyText) {

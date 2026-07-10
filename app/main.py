@@ -71,12 +71,17 @@ class MedicalConsultantHandler(SimpleHTTPRequestHandler):
             return
 
         if parsed.path == "/api/consultations":
-            self.send_json({"consultations": consultation_service.list_consultations()})
+            self.send_json(
+                {"consultations": consultation_service.list_consultations(self.current_owner_user_id())}
+            )
             return
 
         consultation_id = self.match_consultation_detail(parsed.path)
         if consultation_id:
-            consultation = consultation_service.get_consultation(consultation_id)
+            consultation = consultation_service.get_consultation(
+                consultation_id,
+                owner_user_id=self.current_owner_user_id(),
+            )
             if not consultation:
                 self.send_json({"error": "Consultation not found"}, HTTPStatus.NOT_FOUND)
                 return
@@ -91,6 +96,7 @@ class MedicalConsultantHandler(SimpleHTTPRequestHandler):
             consultation = consultation_service.create_consultation(
                 chief_complaint=str(body.get("chief_complaint", "")),
                 user_context=dict(body.get("user_context") or {}),
+                owner_user_id=self.current_owner_user_id(),
             )
             self.send_json(consultation, HTTPStatus.CREATED)
             return
@@ -103,7 +109,11 @@ class MedicalConsultantHandler(SimpleHTTPRequestHandler):
                 self.send_json({"error": "Message content is required"}, HTTPStatus.BAD_REQUEST)
                 return
 
-            result = consultation_service.add_user_message(consultation_id, content)
+            result = consultation_service.add_user_message(
+                consultation_id,
+                content,
+                owner_user_id=self.current_owner_user_id(),
+            )
             if result is None:
                 self.send_json({"error": "Consultation not found"}, HTTPStatus.NOT_FOUND)
                 return
@@ -116,7 +126,10 @@ class MedicalConsultantHandler(SimpleHTTPRequestHandler):
     def handle_api_delete(self, parsed) -> None:
         consultation_id = self.match_consultation_detail(parsed.path)
         if consultation_id:
-            consultation = consultation_service.delete_consultation(consultation_id)
+            consultation = consultation_service.delete_consultation(
+                consultation_id,
+                owner_user_id=self.current_owner_user_id(),
+            )
             if not consultation:
                 self.send_json({"error": "Consultation not found"}, HTTPStatus.NOT_FOUND)
                 return
@@ -145,6 +158,9 @@ class MedicalConsultantHandler(SimpleHTTPRequestHandler):
         self.send_header("content-length", str(len(encoded)))
         self.end_headers()
         self.wfile.write(encoded)
+
+    def current_owner_user_id(self) -> str:
+        return str(self.headers.get("X-User-Id") or "").strip()
 
     @staticmethod
     def match_consultation_detail(path: str) -> str | None:

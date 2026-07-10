@@ -1,6 +1,9 @@
 import unittest
+from tempfile import TemporaryDirectory
+from pathlib import Path
 
 from app.services.consultation_service import ConsultationService
+from app.services.consultation_store import SQLiteConsultationStore
 
 
 class FakeAgent:
@@ -57,6 +60,92 @@ class ConsultationServiceTests(unittest.TestCase):
         self.assertEqual(deleted["chief_complaint"], "delete me")
         self.assertIsNone(service.get_consultation(consultation["id"]))
         self.assertEqual(service.count(), 0)
+
+    def test_in_memory_store_filters_consultations_by_owner(self):
+        service = ConsultationService(agent=FakeAgent())
+        user_a = service.create_consultation(
+            chief_complaint="user a",
+            owner_user_id="user-a",
+        )
+        user_b = service.create_consultation(
+            chief_complaint="user b",
+            owner_user_id="user-b",
+        )
+
+        self.assertEqual(len(service.list_consultations(owner_user_id="user-a")), 1)
+        self.assertEqual(service.get_consultation(user_a["id"], owner_user_id="user-a")["id"], user_a["id"])
+        self.assertIsNone(service.get_consultation(user_b["id"], owner_user_id="user-a"))
+        self.assertIsNone(service.delete_consultation(user_b["id"], owner_user_id="user-a"))
+        self.assertIsNotNone(service.get_consultation(user_b["id"], owner_user_id="user-b"))
+
+    def test_sqlite_store_persists_consultations_across_service_instances(self):
+        with TemporaryDirectory() as tmpdir:
+            store_path = Path(tmpdir) / "consultations.sqlite3"
+            store = SQLiteConsultationStore(store_path)
+            service = ConsultationService(
+                agent=FakeAgent(),
+                store=store,
+            )
+            consultation = service.create_consultation(
+                chief_complaint="persistent cough",
+                user_context={"age": "30"},
+            )
+            service.add_user_message(consultation["id"], "hello")
+
+            store.close()
+            reloaded_store = SQLiteConsultationStore(store_path)
+            reloaded = ConsultationService(
+                agent=FakeAgent(),
+                store=reloaded_store,
+            )
+            persisted = reloaded.get_consultation(consultation["id"])
+
+            self.assertEqual(reloaded.count(), 1)
+            self.assertEqual(persisted["chief_complaint"], "persistent cough")
+            self.assertEqual(len(persisted["messages"]), 2)
+            reloaded_store.close()
+
+    def test_sqlite_store_soft_delete_hides_consultation(self):
+        with TemporaryDirectory() as tmpdir:
+            store_path = Path(tmpdir) / "consultations.sqlite3"
+            store = SQLiteConsultationStore(store_path)
+            service = ConsultationService(
+                agent=FakeAgent(),
+                store=store,
+            )
+            consultation = service.create_consultation(chief_complaint="delete sqlite")
+
+            deleted = service.delete_consultation(consultation["id"])
+
+            self.assertEqual(deleted["chief_complaint"], "delete sqlite")
+            self.assertEqual(service.count(), 0)
+            self.assertEqual(service.list_consultations(), [])
+            self.assertIsNone(service.get_consultation(consultation["id"]))
+            store.close()
+
+    def test_sqlite_store_filters_by_owner(self):
+        with TemporaryDirectory() as tmpdir:
+            store_path = Path(tmpdir) / "consultations.sqlite3"
+            store = SQLiteConsultationStore(store_path)
+            service = ConsultationService(agent=FakeAgent(), store=store)
+            user_a = service.create_consultation(
+                chief_complaint="sqlite user a",
+                owner_user_id="user-a",
+            )
+            user_b = service.create_consultation(
+                chief_complaint="sqlite user b",
+                owner_user_id="user-b",
+            )
+
+            self.assertEqual(len(service.list_consultations(owner_user_id="user-a")), 1)
+            self.assertEqual(
+                service.get_consultation(user_a["id"], owner_user_id="user-a")["chief_complaint"],
+                "sqlite user a",
+            )
+            self.assertIsNone(service.get_consultation(user_b["id"], owner_user_id="user-a"))
+            self.assertIsNone(service.delete_consultation(user_b["id"], owner_user_id="user-a"))
+            self.assertIsNotNone(service.get_consultation(user_b["id"], owner_user_id="user-b"))
+            store.close()
 
 
 if __name__ == "__main__":

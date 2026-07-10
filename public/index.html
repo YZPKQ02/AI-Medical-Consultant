@@ -36,6 +36,10 @@
             </select>
           </label>
           <label>
+            当前城市
+            <input id="cityInput" type="text" placeholder="例如 北京、上海、杭州" />
+          </label>
+          <label>
             过敏史
             <input id="allergyInput" type="text" placeholder="例如 青霉素过敏" />
           </label>
@@ -54,17 +58,6 @@
           </div>
           <div id="consultationList" class="history-list">
             <p class="muted">还没有问诊记录。</p>
-          </div>
-        </section>
-
-        <section class="panel">
-          <h2>知识库检索</h2>
-          <form id="knowledgeSearchForm" class="mini-form">
-            <input id="knowledgeQueryInput" type="search" placeholder="例如 胸痛、发热、用药安全" />
-            <button type="submit">检索</button>
-          </form>
-          <div id="knowledgeResults" class="source-list compact-list">
-            <p class="muted">可先检索知识库，再决定如何追问患者。</p>
           </div>
         </section>
 
@@ -90,9 +83,16 @@
         </section>
 
         <section class="panel">
+          <h2>医院推荐</h2>
+          <div id="hospitalList" class="source-list">
+            <p class="muted">填写当前城市后，Agent 会在回答中给出医院科室候选。</p>
+          </div>
+        </section>
+
+        <section class="panel">
           <h2>知识来源</h2>
           <div id="sourceList" class="source-list">
-            <p class="muted">回答后会显示检索到的医学知识片段。</p>
+            <p class="muted">Agent 回答后会显示本次检索到的医学知识片段。</p>
           </div>
         </section>
       </aside>

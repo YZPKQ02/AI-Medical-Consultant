@@ -5,10 +5,13 @@ import re
 import time
 from typing import Any
 
+from app.agents.agent_state import AgentState
 from app.agents.decision_workflow import LLMSettings, MedicalDecisionWorkflow
+from app.agents.toolbox import MedicalToolbox, ToolExecution
+from app.core.config import settings
+from app.services.hospital_recommender import HospitalRecommendationService
 from app.services.knowledge_base import normalize_text
 from app.services.rag_service import RAGService
-from app.core.config import settings
 
 
 EMERGENCY_SIGNALS = (
@@ -64,9 +67,18 @@ BLOOD_PRESSURE_PATTERN = re.compile(r"(\d{2,3})\s*/\s*(\d{2,3})")
 class MedicalAgent:
     rag_top_k: int = 3
     enable_llm: bool | None = None
+    hospital_recommendation_service: HospitalRecommendationService | None = None
+    toolbox: MedicalToolbox | None = None
 
     def __post_init__(self) -> None:
         self.rag_service = RAGService(top_k=self.rag_top_k, index_path=settings.rag_index_path)
+        if self.hospital_recommendation_service is None:
+            self.hospital_recommendation_service = HospitalRecommendationService()
+        if self.toolbox is None:
+            self.toolbox = MedicalToolbox(
+                rag_service=self.rag_service,
+                hospital_recommendation_service=self.hospital_recommendation_service,
+            )
         self.decision_workflow = MedicalDecisionWorkflow(
             LLMSettings(
                 enabled=settings.agent_llm_enabled if self.enable_llm is None else self.enable_llm,
@@ -88,23 +100,84 @@ class MedicalAgent:
     ) -> dict:
         history = conversation_history or []
         context = user_context or {}
+        state = AgentState(user_context=redact_user_context(context))
         patient_profile = self._build_patient_profile(context)
+        state.patient_profile = self._build_patient_profile(state.user_context)
+        state.mark_step("patient_context", fields=[key for key, value in context.items() if value])
+
         intent = self.classify_intent(message)
+        state.intent = intent
+        state.mark_step("intent_classification", intent=intent)
+
         slot_state = self.extract_slots(message, history, context)
+        state.slots = slot_state
+        state.mark_step("slot_extraction", missing=[key for key, value in slot_state.items() if not value])
+
         analysis = self.analyze_symptoms(message, slot_state)
+        state.symptom_analysis = analysis
+        state.mark_step(
+            "symptom_analysis",
+            symptom_count=len(analysis["symptoms"]),
+            urgency_level=analysis["urgency_level"],
+        )
+
         categories = self._categories_for_intent(intent)
-        rag_context = self.rag_service.build_context(
-            query=message,
+        knowledge_tool = self.toolbox.search_medical_knowledge(
+            message=message,
             top_k=self.rag_top_k,
             categories=categories,
             conversation_history=history,
             user_context=context,
         )
+        self._record_tool_execution(state, knowledge_tool)
+        rag_context = knowledge_tool.payload
         sources = rag_context["retrieved_docs"]
+        state.rag = {
+            "query_expansion": rag_context["query_expansion"],
+            "pipeline": rag_context["pipeline"],
+            "source_count": len(sources),
+            "context_text": rag_context["context_text"],
+        }
+        state.mark_step("rag_retrieval", source_count=len(sources), categories=categories)
+
         risk = self._assess_risk(analysis, slot_state, sources)
+        state.risk = risk
         department = self._choose_department(analysis, sources, risk)
+        state.department = department
+        state.mark_step("risk_and_department", risk_level=risk["level"], department=department)
+
         decision = self._build_decision(intent, analysis, risk, sources, department)
+        state.decision = decision
         follow_up_questions = self._build_follow_up_questions(intent, slot_state, analysis, risk)
+
+        drug_safety = self.toolbox.check_drug_safety(
+            message=message,
+            intent=intent,
+            slots=slot_state,
+            user_context=context,
+        )
+        self._record_tool_execution(state, drug_safety)
+        decision = self._merge_drug_safety_decision(decision, drug_safety.payload)
+
+        hospital_tool = self.toolbox.recommend_hospitals(
+            city=str(context.get("city") or ""),
+            department=department,
+            risk=risk,
+            symptoms=analysis["symptoms"],
+        )
+        self._record_tool_execution(state, hospital_tool)
+        hospital_recommendations = hospital_tool.payload
+        state.mark_step(
+            "mcp_toolbox",
+            status=hospital_recommendations.get("status", "unknown"),
+            invoked_tools=[tool["name"] for tool in state.tool_results],
+        )
+
+        follow_up_questions = self._merge_city_follow_up(
+            follow_up_questions,
+            context,
+            hospital_recommendations,
+        )
         workflow_result = self.decision_workflow.run(
             message=message,
             conversation_history=history,
@@ -126,6 +199,14 @@ class MedicalAgent:
             workflow_result.decision,
             risk,
         )
+        state.decision = decision
+        state.follow_up_questions = follow_up_questions
+        state.llm = workflow_result.metadata
+        state.mark_step(
+            "llm_orchestration",
+            enabled=workflow_result.metadata.get("enabled"),
+            used=workflow_result.metadata.get("used"),
+        )
 
         result_analysis = {
             **analysis,
@@ -135,6 +216,8 @@ class MedicalAgent:
             "slots": slot_state,
             "risk": risk,
             "department": department,
+            "hospital_recommendations": hospital_recommendations,
+            "drug_safety": drug_safety.payload,
             "possible_causes": decision["possible_causes"],
             "suggested_examinations": decision["suggested_examinations"],
             "self_care_tips": decision["self_care_tips"],
@@ -142,15 +225,17 @@ class MedicalAgent:
             "follow_up_questions": follow_up_questions,
             "context_summary": self._summarize_context(history, context),
             "llm": workflow_result.metadata,
-            "rag": {
-                "query_expansion": rag_context["query_expansion"],
-                "pipeline": rag_context["pipeline"],
-                "context_text": rag_context["context_text"],
-            },
+            "rag": state.rag,
+            "tool_results": state.tool_results,
+            "agent_state": state.to_dict(),
         }
         content = self._build_reply(result_analysis, sources)
         if workflow_result.content and not result_analysis["needs_urgent_care"]:
             content = self._finalize_llm_reply(workflow_result.content)
+            content = self._append_hospital_recommendation_section(
+                content,
+                result_analysis["hospital_recommendations"],
+            )
 
         return {
             "id": f"assistant_{time.time_ns()}",
@@ -192,6 +277,7 @@ class MedicalAgent:
             "gender": context.get("gender") or None,
             "allergies": context.get("allergies") or None,
             "chronic_diseases": context.get("chronic_diseases") or None,
+            "city": context.get("city") or None,
             "medications": extract_after_keywords(normalized, ("正在吃", "服用", "吃了")),
             "history_mentions": self._recent_user_messages(history),
         }
@@ -345,6 +431,8 @@ class MedicalAgent:
         source_lines = [
             f"- {source['title']}（{source['retrieval_reason']}）" for source in sources[:3]
         ] or ["- 暂无高匹配知识来源"]
+        drug_safety_lines = self._format_drug_safety(analysis.get("drug_safety") or {})
+        hospital_lines = self._format_hospital_recommendations(analysis["hospital_recommendations"])
 
         return "\n".join(
             [
@@ -365,8 +453,14 @@ class MedicalAgent:
                 "【护理与安全建议】",
                 *[f"- {item}" for item in analysis["self_care_tips"]],
                 "",
+                "【用药安全核对】",
+                *drug_safety_lines,
+                "",
                 "【参考知识】",
                 *source_lines,
+                "",
+                "【医院推荐】",
+                *hospital_lines,
                 "",
                 "【需要补充】",
                 *[f"- {item}" for item in analysis["follow_up_questions"]],
@@ -396,6 +490,7 @@ class MedicalAgent:
             "gender": context.get("gender") or "未填写",
             "allergies": context.get("allergies") or "未填写",
             "chronic_diseases": context.get("chronic_diseases") or "未填写",
+            "city": context.get("city") or "未填写",
         }
 
     def _recent_user_messages(self, history: list[dict]) -> list[str]:
@@ -444,15 +539,107 @@ class MedicalAgent:
 
         return list(dict.fromkeys([*llm_questions, *current_questions]))[:4]
 
+    def _record_tool_execution(self, state: AgentState, tool: ToolExecution) -> None:
+        state.record_tool_result(
+            name=tool.name,
+            status=tool.status,
+            input_summary=tool.input_summary,
+            output_summary=tool.output_summary,
+        )
+
+    def _merge_drug_safety_decision(self, decision: dict, drug_safety: dict) -> dict:
+        if drug_safety.get("status") != "available":
+            return decision
+
+        merged = dict(decision)
+        warnings = drug_safety.get("warnings") or []
+        recommendations = drug_safety.get("recommendations") or []
+        if warnings or recommendations:
+            merged["self_care_tips"] = list(
+                dict.fromkeys(
+                    [
+                        *merged.get("self_care_tips", []),
+                        *warnings,
+                        *recommendations,
+                    ]
+                )
+            )[:8]
+        return merged
+
     def _finalize_llm_reply(self, content: str) -> str:
         disclaimer = "免责声明：以上内容仅供健康信息参考，不能替代专业医生诊断。若症状加重或出现危险信号，请及时就医。"
         if "免责声明" in content or "不能替代" in content:
             return content
         return f"{content.rstrip()}\n\n{disclaimer}"
 
+    def _append_hospital_recommendation_section(
+        self,
+        content: str,
+        hospital_recommendations: dict,
+    ) -> str:
+        if "【医院推荐】" in content:
+            return content
+        hospital_lines = self._format_hospital_recommendations(hospital_recommendations)
+        return "\n".join([content.rstrip(), "", "【医院推荐】", *hospital_lines])
+
+    def _format_drug_safety(self, drug_safety: dict) -> list[str]:
+        if drug_safety.get("status") == "skipped":
+            return ["- 本轮不是用药咨询，未调用药物安全工具。"]
+        if drug_safety.get("status") != "available":
+            return ["- 暂无可用的药物安全核对结果。"]
+
+        lines = []
+        warnings = drug_safety.get("warnings") or []
+        missing_context = drug_safety.get("missing_context") or []
+        recommendations = drug_safety.get("recommendations") or []
+
+        if warnings:
+            lines.extend(f"- {warning}" for warning in warnings)
+        if missing_context:
+            lines.append(f"- 用药判断仍缺少：{'、'.join(missing_context)}。")
+        if recommendations:
+            lines.extend(f"- {item}" for item in recommendations[:2])
+        return lines or ["- 未识别到明确药物禁忌，但仍需按说明书或医嘱用药。"]
+
+    def _merge_city_follow_up(
+        self,
+        current_questions: list[str],
+        context: dict,
+        hospital_recommendations: dict,
+    ) -> list[str]:
+        if context.get("city") or hospital_recommendations.get("status") != "missing_city":
+            return current_questions
+        return list(dict.fromkeys([*current_questions, "你当前所在城市是哪里？"]))[:5]
+
+    def _format_hospital_recommendations(self, hospital_recommendations: dict) -> list[str]:
+        recommendations = hospital_recommendations.get("recommendations") or []
+        if recommendations:
+            lines = []
+            for item in recommendations[:3]:
+                address = f"；地址：{item['address']}" if item.get("address") else ""
+                lines.append(f"- {item['name']}（{item['matched_department']}）{address}；{item['reason']}")
+            lines.append("- 请核实医院挂号、科室开放和急诊接诊情况；急症请优先线下急诊或拨打急救电话。")
+            return lines
+
+        status = hospital_recommendations.get("status")
+        if status == "missing_city":
+            return ["- 提供当前所在城市后，我可以结合建议科室给出该城市医院候选。"]
+        if status == "unavailable":
+            return ["- 医院推荐服务暂不可用，请根据建议科室自行核实当地医院挂号与接诊信息。"]
+        return ["- 暂未检索到合适医院候选，请核实当地医院挂号与接诊信息。"]
+
 
 def current_timestamp() -> str:
     return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+
+
+def redact_user_context(context: dict[str, Any]) -> dict[str, Any]:
+    allowed = ("age", "gender", "city")
+    redacted = {key: context.get(key) for key in allowed if context.get(key)}
+    for key in ("allergies", "chronic_diseases"):
+        if context.get(key):
+            redacted[key] = "provided"
+    return redacted
 
 
 def extract_after_keywords(message: str, keywords: tuple[str, ...]) -> str | None:

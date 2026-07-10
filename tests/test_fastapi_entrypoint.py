@@ -45,6 +45,37 @@ class FastAPIEntrypointTests(unittest.TestCase):
         self.assertTrue(deleted.json()["deleted"])
         self.assertEqual(fetched.status_code, 404)
 
+    def test_consultation_routes_are_scoped_by_user_header(self):
+        user_a_headers = {"X-User-Id": "fastapi-user-a"}
+        user_b_headers = {"X-User-Id": "fastapi-user-b"}
+        created = self.client.post(
+            "/api/v1/consultations",
+            headers=user_a_headers,
+            json={"chief_complaint": "private cough", "user_context": {"age": "30"}},
+        )
+        consultation_id = created.json()["id"]
+
+        user_a_list = self.client.get("/api/v1/consultations", headers=user_a_headers)
+        user_b_list = self.client.get("/api/v1/consultations", headers=user_b_headers)
+        user_b_fetch = self.client.get(
+            f"/api/v1/consultations/{consultation_id}",
+            headers=user_b_headers,
+        )
+        user_b_delete = self.client.delete(
+            f"/api/v1/consultations/{consultation_id}",
+            headers=user_b_headers,
+        )
+        user_a_fetch = self.client.get(
+            f"/api/v1/consultations/{consultation_id}",
+            headers=user_a_headers,
+        )
+
+        self.assertIn(consultation_id, [item["id"] for item in user_a_list.json()["consultations"]])
+        self.assertNotIn(consultation_id, [item["id"] for item in user_b_list.json()["consultations"]])
+        self.assertEqual(user_b_fetch.status_code, 404)
+        self.assertEqual(user_b_delete.status_code, 404)
+        self.assertEqual(user_a_fetch.status_code, 200)
+
     def test_legacy_knowledge_route_stays_frontend_compatible(self):
         response = self.client.get("/api/knowledge", params={"q": "cough"})
 
