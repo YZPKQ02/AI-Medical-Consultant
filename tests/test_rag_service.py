@@ -4,7 +4,31 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 
 from app.services.embedding_provider import QwenEmbeddingProvider
-from app.services.rag_service import RAGService, load_documents_from_directory
+from app.services.rag_service import RAGService, cosine_similarity, load_documents_from_directory
+
+
+class RecordingEmbeddingProvider:
+    name = "recording"
+    backend = "recording"
+    text_model = None
+    vision_model = None
+    is_fallback = False
+    embedding_dimension = 3
+
+    def __init__(self):
+        self.queries = []
+        self.documents = []
+
+    def embed_query(self, text, tokenizer):
+        self.queries.append(text)
+        return (1.0, 0.0, 0.0)
+
+    def embed_document(self, text, tokenizer):
+        self.documents.append(text)
+        return (1.0, 0.0, 0.0)
+
+    def embed_image(self, image_path):
+        return (0.0, 1.0, 0.0)
 
 
 class RAGServiceTests(unittest.TestCase):
@@ -32,6 +56,21 @@ class RAGServiceTests(unittest.TestCase):
         self.assertIn("dense_vector", results[0]["channel_scores"])
         self.assertIn("medical_terms", results[0]["channel_scores"])
         self.assertGreater(results[0]["rrf_score"], 0)
+
+    def test_dense_retrieval_uses_distinct_query_and_document_encoders(self):
+        provider = RecordingEmbeddingProvider()
+        rag = RAGService(top_k=1, include_builtin=False, embedding_provider=provider)
+        rag.add_documents([{"id": "doc", "title": "Headache", "content": "Headache care"}])
+
+        rag.retrieve("head pain", top_k=1)
+
+        self.assertEqual(len(provider.documents), 1)
+        self.assertEqual(len(provider.queries), 1)
+        self.assertIn("head pain", provider.queries[0])
+
+    def test_cosine_similarity_rejects_mixed_embedding_dimensions(self):
+        with self.assertRaisesRegex(ValueError, "dimension mismatch"):
+            cosine_similarity((1.0, 0.0), (1.0, 0.0, 0.0))
 
     def test_context_assembly_contains_prompt_docs_and_question(self):
         rag = RAGService(top_k=2)
@@ -74,11 +113,15 @@ class RAGServiceTests(unittest.TestCase):
             chunk_count = rag.add_documents(documents)
             rag.save_index(index_path)
 
+            index_payload = json.loads(index_path.read_text(encoding="utf-8"))
+
             loaded = RAGService(include_builtin=False, index_path=index_path)
             results = loaded.retrieve("尿痛还有血尿", top_k=1)
 
             self.assertGreaterEqual(chunk_count, 1)
             self.assertTrue(index_path.exists())
+            self.assertEqual(index_payload["version"], 2)
+            self.assertEqual(index_payload["embedding"]["dim"], 1024)
             self.assertEqual(results[0]["document_id"], "urinary-test")
 
     def test_image_document_vectorization_and_retrieval(self):

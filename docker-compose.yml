@@ -1,0 +1,38 @@
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: ai_medical_consultant
+      POSTGRES_USER: ai_medical
+      POSTGRES_PASSWORD: ai_medical_dev_password
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ai_medical -d ai_medical_consultant"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  app:
+    build: .
+    environment:
+      HOST: 0.0.0.0
+      PORT: 3000
+      DATABASE_URL: postgresql://ai_medical:ai_medical_dev_password@db:5432/ai_medical_consultant
+      RAG_INDEX_PATH: storage/vector_index.json
+      HOSPITAL_RECOMMENDER_ENABLED: ${HOSPITAL_RECOMMENDER_ENABLED:-0}
+      AMAP_MCP_URL: ${AMAP_MCP_URL:-}
+      AMAP_WEB_SERVICE_KEY: ${AMAP_WEB_SERVICE_KEY:-}
+      AGENT_LLM_ENABLED: ${AGENT_LLM_ENABLED:-0}
+      DEEPSEEK_BASE_URL: ${DEEPSEEK_BASE_URL:-}
+      DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:-}
+    ports:
+      - "3000:3000"
+    depends_on:
+      db:
+        condition: service_healthy
+
+volumes:
+  postgres_data:

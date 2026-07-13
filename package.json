@@ -9,6 +9,7 @@
     "legacy": ".venv\\Scripts\\python.exe -u run.py",
     "mcp:hospital": ".venv\\Scripts\\python.exe -m app.mcp.hospital_recommender_server",
     "mcp:medical": ".venv\\Scripts\\python.exe -m app.mcp.medical_toolbox_server",
+    "compose:up": "docker compose up --build",
     "vectorize": ".venv\\Scripts\\python.exe -m scripts.vectorize_documents",
     "eval": ".venv\\Scripts\\python.exe scripts\\evaluate_agent.py",
     "test": "node --test tests/*.test.js && .venv\\Scripts\\python.exe -m unittest discover -s tests -p \"test_*.py\""
