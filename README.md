@@ -27,6 +27,17 @@ npm start
 
 Open `http://127.0.0.1:3000`.
 
+Run with PostgreSQL via Docker Compose:
+
+```bash
+npm run compose:up
+```
+
+The compose stack starts:
+
+- `db`: PostgreSQL 16
+- `app`: FastAPI backend with `DATABASE_URL` pointed at the database
+
 To run the previous dependency-light standard-library backend:
 
 ```bash
@@ -37,11 +48,27 @@ Embedding provider defaults to the Qwen adapter:
 
 ```powershell
 $env:EMBEDDING_PROVIDER="qwen"
-$env:QWEN_ENABLE_LOCAL="0"
+$env:QWEN_ENABLE_LOCAL="1"
+$env:QWEN_LOCAL_FILES_ONLY="0"
+$env:EMBEDDING_DIMENSION="1024"
+$env:QWEN_TEXT_EMBEDDING_MODEL="Qwen/Qwen3-Embedding-0.6B"
+npm.cmd run vectorize -- --builtin
 npm.cmd start
 ```
 
-With `QWEN_ENABLE_LOCAL=0`, the app keeps a dependency-free fallback so it still runs before local Qwen model dependencies are installed.
+The first vectorization downloads the model into the Hugging Face cache. When local
+Qwen is enabled, loading failures stop startup instead of silently using hash vectors.
+Set `QWEN_ENABLE_LOCAL=0` only for offline tests or the dependency-free fallback.
+After the first successful download, set `QWEN_LOCAL_FILES_ONLY=1` so application
+startup uses the cache and does not depend on Hugging Face availability.
+
+On Windows with an NVIDIA GPU, install the CUDA build of PyTorch after the regular
+requirements. The CUDA version must match a build supported by the installed driver:
+
+```powershell
+.venv\Scripts\python.exe -m pip install --force-reinstall torch==2.13.0 `
+  --index-url https://download.pytorch.org/whl/cu130
+```
 
 ## Backend Architecture
 
@@ -62,6 +89,10 @@ legacy server, so the migration path does not fork business logic.
 Consultation history is persisted locally through SQLite at
 `storage/consultations.sqlite3` by default. Override it with
 `CONSULTATION_STORE_PATH` when needed.
+When `DATABASE_URL` is set, the runtime uses PostgreSQL instead. The PostgreSQL
+store normalizes production data into `users`, `consultations`, `messages`,
+`agent_runs`, and `tool_calls`, while retaining JSONB payloads for full response
+reconstruction and audit.
 The frontend also sends an anonymous `X-User-Id` generated in localStorage, and
 the backend scopes consultation list/detail/delete/message operations by that
 owner. This is not a full authentication system, but it prevents different
@@ -188,10 +219,10 @@ npm run eval
 Put `.md`, `.txt`, `.png`, `.jpg`, `.jpeg`, `.webp`, or `.bmp` medical knowledge files in `knowledge_base/`, then build the local vector index:
 
 ```bash
-npm run vectorize
+npm run vectorize -- --builtin
 ```
 
-The generated index is saved to `storage/vector_index.json`. The app loads this path by default through `RAG_INDEX_PATH`.
+The generated index is saved to `storage/vector_index.json`. The app loads this path by default through `RAG_INDEX_PATH`. Rebuild the index whenever the embedding model, vector dimension, or fallback mode changes; incompatible indexes are rejected at startup.
 
 Document files can include front matter:
 
@@ -257,8 +288,8 @@ Optional FastAPI v1 routes:
 ## Next Steps
 
 - Replace the standard-library hash multimodal retriever with Qwen-VL/Qwen Embedding, BioMedCLIP, SentenceTransformer + FAISS, or ChromaDB.
-- Add a PostgreSQL-backed consultation store for deployment.
 - Replace anonymous local owner IDs with authenticated users and role-based access.
+- Add schema migrations for PostgreSQL instead of boot-time `CREATE TABLE IF NOT EXISTS`.
 - Expand the LLM provider layer with streaming SSE/WebSocket output.
 
 ## RAG Pipeline
@@ -268,29 +299,19 @@ The current RAG implementation lives in `app/services/rag_service.py`:
 1. Offline vectorization: load text/image documents, split text chunks, caption images, embed text and images, save `storage/vector_index.json`.
 2. Query expansion: synonym replacement, symptom normalization, and medical term expansion.
 3. Sparse retrieval: BM25-style keyword matching.
-4. Dense text retrieval: dependency-free hash-vector cosine similarity.
+4. Dense text retrieval: Qwen3 query/document embeddings with cosine similarity.
 5. Dense image retrieval: image-vector similarity plus caption matching.
 6. Medical term retrieval: disease, symptom, red-flag, and department term matching.
 7. Reciprocal Rank Fusion: combines all retrieval channels.
 8. Deduplication and Top-K selection.
 9. Context assembly: system prompt, patient context, conversation history, retrieved docs, and user question.
 
-The embedding provider interface lives in `app/services/embedding_provider.py`. The default provider is `QwenEmbeddingProvider`, which falls back to dependency-free hash vectors until local Qwen dependencies and model weights are installed:
+The embedding provider interface lives in `app/services/embedding_provider.py`. The production provider is `Qwen3-Embedding-0.6B` with normalized 1024-dimensional vectors and a medical retrieval instruction on the query side:
 
 ```python
 class EmbeddingProvider:
-    def embed_text(text) -> list[float]: ...
+    def embed_query(text) -> list[float]: ...
+    def embed_document(text) -> list[float]: ...
     def embed_image(image_path) -> list[float]: ...
     def caption_image(image_path, metadata) -> str: ...
-```
-
-Planned local Qwen runtime dependencies, pending confirmation before adding production dependencies:
-
-```text
-sentence-transformers
-transformers
-torch
-accelerate
-pillow
-qwen-vl-utils
 ```

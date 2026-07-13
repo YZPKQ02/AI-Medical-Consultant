@@ -14,10 +14,17 @@ class Settings:
     rag_top_k: int = 3
     rag_index_path: str = "storage/vector_index.json"
     consultation_store_path: str = "storage/consultations.sqlite3"
+    database_url: str = ""
     embedding_provider: str = "qwen"
     qwen_text_embedding_model: str = "Qwen/Qwen3-Embedding-0.6B"
     qwen_vision_embedding_model: str = "Qwen/Qwen3-VL-Embedding"
+    embedding_dimension: int = 1024
+    embedding_query_instruction: str = (
+        "Given a Chinese medical consultation query, retrieve clinically relevant passages "
+        "for symptom assessment, risk triage, medication safety, and department recommendation."
+    )
     qwen_enable_local: bool = False
+    qwen_local_files_only: bool = False
     agent_llm_enabled: bool = False
     llm_model: str = "deepseek-v4-flash"
     llm_base_url: str = ""
@@ -45,10 +52,19 @@ def get_settings() -> Settings:
         consultation_store_path=os.getenv(
             "CONSULTATION_STORE_PATH", "storage/consultations.sqlite3"
         ),
+        database_url=os.getenv("DATABASE_URL", ""),
         embedding_provider=os.getenv("EMBEDDING_PROVIDER", "qwen"),
         qwen_text_embedding_model=os.getenv("QWEN_TEXT_EMBEDDING_MODEL", "Qwen/Qwen3-Embedding-0.6B"),
         qwen_vision_embedding_model=os.getenv("QWEN_VISION_EMBEDDING_MODEL", "Qwen/Qwen3-VL-Embedding"),
+        embedding_dimension=int(os.getenv("EMBEDDING_DIMENSION", "1024")),
+        embedding_query_instruction=os.getenv(
+            "EMBEDDING_QUERY_INSTRUCTION",
+            "Given a Chinese medical consultation query, retrieve clinically relevant passages "
+            "for symptom assessment, risk triage, medication safety, and department recommendation.",
+        ),
         qwen_enable_local=os.getenv("QWEN_ENABLE_LOCAL", "0").lower() in {"1", "true", "yes"},
+        qwen_local_files_only=os.getenv("QWEN_LOCAL_FILES_ONLY", "0").lower()
+        in {"1", "true", "yes"},
         agent_llm_enabled=os.getenv("AGENT_LLM_ENABLED", "0").lower() in {"1", "true", "yes"},
         llm_model=os.getenv("DEEPSEEK_MODEL", os.getenv("LLM_MODEL", "deepseek-v4-flash")),
         llm_base_url=os.getenv("DEEPSEEK_BASE_URL", os.getenv("LLM_BASE_URL", "")),
@@ -84,7 +100,8 @@ def load_env_file(path: str | Path = ".env") -> None:
     if not env_path.exists():
         return
 
-    for raw_line in env_path.read_text(encoding="utf-8").splitlines():
+    # utf-8-sig accepts regular UTF-8 files and strips a BOM when editors add one.
+    for raw_line in env_path.read_text(encoding="utf-8-sig").splitlines():
         line = raw_line.strip()
         if not line or line.startswith("#") or "=" not in line:
             continue

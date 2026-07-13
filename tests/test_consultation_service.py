@@ -3,7 +3,7 @@ from tempfile import TemporaryDirectory
 from pathlib import Path
 
 from app.services.consultation_service import ConsultationService
-from app.services.consultation_store import SQLiteConsultationStore
+from app.services.consultation_store import SQLiteConsultationStore, postgresql_schema_sql
 
 
 class FakeAgent:
@@ -146,6 +146,23 @@ class ConsultationServiceTests(unittest.TestCase):
             self.assertIsNone(service.delete_consultation(user_b["id"], owner_user_id="user-a"))
             self.assertIsNotNone(service.get_consultation(user_b["id"], owner_user_id="user-b"))
             store.close()
+
+    def test_postgresql_schema_defines_normalized_agent_tables(self):
+        schema = "\n".join(postgresql_schema_sql())
+
+        for table_name in (
+            "users",
+            "consultations",
+            "messages",
+            "agent_runs",
+            "tool_calls",
+        ):
+            self.assertIn(f"CREATE TABLE IF NOT EXISTS {table_name}", schema)
+
+        self.assertIn("owner_user_id TEXT NOT NULL REFERENCES users(id)", schema)
+        self.assertIn("payload_json JSONB NOT NULL", schema)
+        self.assertIn("analysis_json JSONB NOT NULL", schema)
+        self.assertIn("idx_consultations_owner_active_updated", schema)
 
 
 if __name__ == "__main__":

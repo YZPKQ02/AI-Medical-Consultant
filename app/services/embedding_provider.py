@@ -28,6 +28,16 @@ class HashEmbeddingProvider:
     def embed_text(self, text: str, tokenizer: Callable[[str], list[str]]) -> tuple[float, ...]:
         return self.embed_terms(tokenizer(text))
 
+    def embed_query(self, text: str, tokenizer: Callable[[str], list[str]]) -> tuple[float, ...]:
+        return self.embed_text(text, tokenizer)
+
+    def embed_document(self, text: str, tokenizer: Callable[[str], list[str]]) -> tuple[float, ...]:
+        return self.embed_text(text, tokenizer)
+
+    @property
+    def embedding_dimension(self) -> int:
+        return self.vector_dim
+
     def embed_terms(self, terms: list[str]) -> tuple[float, ...]:
         vector = [0.0] * self.vector_dim
         counts = Counter(terms)
@@ -94,11 +104,15 @@ class QwenEmbeddingProvider:
         text_model: str = "Qwen/Qwen3-Embedding-0.6B",
         vision_model: str = "Qwen/Qwen3-VL-Embedding",
         enable_local: bool = False,
+        query_instruction: str = "",
+        local_files_only: bool = False,
     ):
         self.vector_dim = vector_dim
         self.text_model = text_model
         self.vision_model = vision_model
         self.enable_local = enable_local
+        self.query_instruction = query_instruction
+        self.local_files_only = local_files_only
         self.fallback = HashEmbeddingProvider(vector_dim=vector_dim)
         self.backend = "qwen-local" if enable_local else "qwen-configured-fallback-hash"
         self._text_model_handle = None
@@ -108,17 +122,34 @@ class QwenEmbeddingProvider:
         return self._text_model_handle is None
 
     def embed_text(self, text: str, tokenizer: Callable[[str], list[str]]) -> tuple[float, ...]:
+        return self.embed_document(text, tokenizer)
+
+    def embed_query(self, text: str, tokenizer: Callable[[str], list[str]]) -> tuple[float, ...]:
+        if self._ensure_text_model_loaded():
+            encode_kwargs = {"normalize_embeddings": True}
+            if self.query_instruction:
+                encode_kwargs["prompt"] = f"Instruct: {self.query_instruction}\nQuery: "
+            vector = self._text_model_handle.encode([text], **encode_kwargs)[0]
+            return tuple(float(value) for value in vector)
+        return self.fallback.embed_text(text, tokenizer)
+
+    def embed_document(self, text: str, tokenizer: Callable[[str], list[str]]) -> tuple[float, ...]:
         if self._ensure_text_model_loaded():
             vector = self._text_model_handle.encode([text], normalize_embeddings=True)[0]
             return tuple(float(value) for value in vector)
         return self.fallback.embed_text(text, tokenizer)
 
     def embed_terms(self, terms: list[str]) -> tuple[float, ...]:
-        if self._ensure_text_model_loaded():
-            text = " ".join(terms)
-            vector = self._text_model_handle.encode([text], normalize_embeddings=True)[0]
-            return tuple(float(value) for value in vector)
-        return self.fallback.embed_terms(terms)
+        return self.embed_document(" ".join(terms), lambda value: value.split())
+
+    @property
+    def embedding_dimension(self) -> int:
+        if self._text_model_handle is not None:
+            get_dimension = getattr(self._text_model_handle, "get_embedding_dimension", None)
+            if get_dimension is None:
+                get_dimension = self._text_model_handle.get_sentence_embedding_dimension
+            return int(get_dimension())
+        return self.vector_dim
 
     def embed_image(self, image_path: str | Path) -> tuple[float, ...]:
         # Keep a stable API for future Qwen-VL image embedding. Until the
@@ -141,17 +172,22 @@ class QwenEmbeddingProvider:
 
         try:
             from sentence_transformers import SentenceTransformer
-        except ImportError:
+        except ImportError as exc:
             self.backend = "qwen-missing-sentence-transformers-fallback-hash"
-            return False
+            raise RuntimeError(
+                "Qwen local embedding is enabled but sentence-transformers is not installed"
+            ) from exc
 
         try:
-            self._text_model_handle = SentenceTransformer(self.text_model)
+            self._text_model_handle = SentenceTransformer(
+                self.text_model,
+                local_files_only=self.local_files_only,
+            )
             self.backend = "qwen-local"
             return True
-        except Exception:
+        except Exception as exc:
             self.backend = "qwen-load-failed-fallback-hash"
-            return False
+            raise RuntimeError(f"Failed to load local embedding model {self.text_model}: {exc}") from exc
 
 
 def create_embedding_provider(
@@ -160,6 +196,8 @@ def create_embedding_provider(
     text_model: str = "Qwen/Qwen3-Embedding-0.6B",
     vision_model: str = "Qwen/Qwen3-VL-Embedding",
     enable_local: bool = False,
+    query_instruction: str = "",
+    local_files_only: bool = False,
 ):
     normalized = provider.strip().lower()
     if normalized == "qwen":
@@ -168,6 +206,8 @@ def create_embedding_provider(
             text_model=text_model,
             vision_model=vision_model,
             enable_local=enable_local,
+            query_instruction=query_instruction,
+            local_files_only=local_files_only,
         )
     if normalized in {"hash", "hash-multimodal"}:
         return HashEmbeddingProvider(vector_dim=vector_dim)

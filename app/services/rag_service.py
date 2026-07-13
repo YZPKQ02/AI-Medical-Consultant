@@ -113,25 +113,31 @@ class RAGService:
     def __init__(
         self,
         top_k: int = 5,
-        vector_dim: int = 96,
+        vector_dim: int | None = None,
         rrf_k: int = 60,
         index_path: str | Path | None = None,
         include_builtin: bool = True,
         embedding_provider: HashEmbeddingProvider | None = None,
     ):
         self.top_k = top_k
-        self.vector_dim = vector_dim
+        self.vector_dim = vector_dim or settings.embedding_dimension
         self.rrf_k = rrf_k
         self.embedding_provider = embedding_provider or create_embedding_provider(
             provider=settings.embedding_provider,
-            vector_dim=vector_dim,
+            vector_dim=self.vector_dim,
             text_model=settings.qwen_text_embedding_model,
             vision_model=settings.qwen_vision_embedding_model,
             enable_local=settings.qwen_enable_local,
+            query_instruction=settings.embedding_query_instruction,
+            local_files_only=settings.qwen_local_files_only,
         )
         self.chunks = self._build_chunks() if include_builtin else []
         if index_path:
-            self.load_index(index_path)
+            try:
+                self.load_index(index_path)
+            except ValueError:
+                if not (include_builtin and getattr(self.embedding_provider, "is_fallback", False)):
+                    raise
         self.avg_doc_len = self._average_doc_length()
         self.document_frequency = self._build_document_frequency()
 
@@ -171,7 +177,9 @@ class RAGService:
                         aliases=aliases,
                         red_flags=red_flags,
                         token_counts=Counter(tokens),
-                        vector=self._embed(tokens),
+                        vector=self._embed_document(
+                            " ".join([title, part, *keywords, *aliases, *red_flags])
+                        ),
                         image_vector=(
                             self.embedding_provider.embed_image(document["image_path"])
                             if document.get("image_path")
@@ -188,11 +196,11 @@ class RAGService:
         target = Path(path)
         target.parent.mkdir(parents=True, exist_ok=True)
         payload = {
-            "version": 1,
+            "version": 2,
             "embedding": {
                 "provider": getattr(self.embedding_provider, "name", "unknown"),
                 "backend": getattr(self.embedding_provider, "backend", getattr(self.embedding_provider, "name", "unknown")),
-                "dim": self.vector_dim,
+                "dim": self.embedding_dimension,
                 "text_model": getattr(self.embedding_provider, "text_model", None),
                 "vision_model": getattr(self.embedding_provider, "vision_model", None),
                 "fallback": bool(getattr(self.embedding_provider, "is_fallback", False)),
@@ -208,6 +216,7 @@ class RAGService:
             return 0
 
         payload = json.loads(source.read_text(encoding="utf-8"))
+        self._validate_index_metadata(payload, source)
         records = payload.get("chunks", [])
         loaded_chunks = [chunk_from_record(record) for record in records]
 
@@ -339,7 +348,11 @@ class RAGService:
                         aliases=doc.aliases,
                         red_flags=doc.red_flags,
                         token_counts=Counter(tokens),
-                        vector=self._embed(tokens),
+                        vector=self._embed_document(
+                            " ".join(
+                                [doc.title, part, *doc.keywords, *doc.aliases, *doc.red_flags]
+                            )
+                        ),
                         image_vector=None,
                     )
                 )
@@ -375,7 +388,7 @@ class RAGService:
         self, expansion: QueryExpansion, chunks: list[DocumentChunk]
     ) -> list[tuple[DocumentChunk, float, set[str]]]:
         query_terms = self._query_terms(expansion)
-        query_vector = self._embed(query_terms)
+        query_vector = self._embed_query(" ".join(expansion.rewritten_queries))
         results = []
 
         for chunk in chunks:
@@ -391,14 +404,15 @@ class RAGService:
     def _image_search(
         self, expansion: QueryExpansion, chunks: list[DocumentChunk]
     ) -> list[tuple[DocumentChunk, float, set[str]]]:
+        image_chunks = [chunk for chunk in chunks if chunk.modality == "image" and chunk.image_vector]
+        if not image_chunks:
+            return []
+
         query_terms = self._query_terms(expansion)
-        query_vector = self._embed(query_terms)
+        query_vector = self._embed_query(" ".join(expansion.rewritten_queries))
         results = []
 
-        for chunk in chunks:
-            if chunk.modality != "image" or not chunk.image_vector:
-                continue
-
+        for chunk in image_chunks:
             score = cosine_similarity(query_vector, chunk.image_vector)
             caption_matches = set(query_terms).intersection(chunk.token_counts)
             if caption_matches:
@@ -532,8 +546,30 @@ class RAGService:
                     terms.append(related)
         return terms
 
-    def _embed(self, terms: list[str]) -> tuple[float, ...]:
-        return self.embedding_provider.embed_terms(terms)
+    @property
+    def embedding_dimension(self) -> int:
+        return int(getattr(self.embedding_provider, "embedding_dimension", self.vector_dim))
+
+    def _embed_query(self, text: str) -> tuple[float, ...]:
+        return self.embedding_provider.embed_query(text, self._terms_for_text)
+
+    def _embed_document(self, text: str) -> tuple[float, ...]:
+        return self.embedding_provider.embed_document(text, self._terms_for_text)
+
+    def _validate_index_metadata(self, payload: dict[str, Any], source: Path) -> None:
+        metadata = payload.get("embedding") or {}
+        expected = {
+            "provider": getattr(self.embedding_provider, "name", "unknown"),
+            "dim": self.embedding_dimension,
+            "text_model": getattr(self.embedding_provider, "text_model", None),
+            "fallback": bool(getattr(self.embedding_provider, "is_fallback", False)),
+        }
+        actual = {key: metadata.get(key) for key in expected}
+        if payload.get("version") != 2 or actual != expected:
+            raise ValueError(
+                f"Embedding index {source} is incompatible with the active provider. "
+                "Rebuild it with `npm run vectorize -- --builtin`."
+            )
 
     def _build_document_frequency(self) -> dict[str, int]:
         frequency = defaultdict(int)
@@ -580,6 +616,8 @@ def split_text(text: str, chunk_size: int = 220, overlap: int = 40) -> list[str]
 def cosine_similarity(left: tuple[float, ...], right: tuple[float, ...]) -> float:
     if not left or not right:
         return 0.0
+    if len(left) != len(right):
+        raise ValueError(f"Embedding dimension mismatch: {len(left)} != {len(right)}")
     return sum(a * b for a, b in zip(left, right))
 
 
