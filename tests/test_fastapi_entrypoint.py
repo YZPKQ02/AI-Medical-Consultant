@@ -18,6 +18,15 @@ class FastAPIEntrypointTests(unittest.TestCase):
         self.assertEqual(versioned.json()["status"], "healthy")
         self.assertEqual(legacy.json()["status"], "healthy")
 
+    def test_readiness_exposes_database_and_embedding_checks(self):
+        response = self.client.get("/api/v1/ready")
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["status"], "ready")
+        self.assertTrue(payload["checks"]["database"]["ready"])
+        self.assertIn("backend", payload["checks"]["embedding"])
+
     def test_consultation_routes_create_and_fetch_session(self):
         created = self.client.post(
             "/api/v1/consultations",

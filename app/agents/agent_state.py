@@ -1,7 +1,10 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
+import time
 from typing import Any
+import uuid
 
 
 @dataclass
@@ -21,15 +24,21 @@ class AgentState:
     llm: dict[str, Any] = field(default_factory=dict)
     tool_results: list[dict[str, Any]] = field(default_factory=list)
     steps: list[dict[str, Any]] = field(default_factory=list)
+    _last_step_ns: int = field(default_factory=time.perf_counter_ns, init=False, repr=False)
+    _started_ns: int = field(default_factory=time.perf_counter_ns, init=False, repr=False)
 
     def mark_step(self, name: str, status: str = "completed", **metadata: Any) -> None:
+        now_ns = time.perf_counter_ns()
         self.steps.append(
             {
                 "name": name,
                 "status": status,
+                "completed_at": datetime.now(timezone.utc).isoformat(),
+                "duration_ms": round((now_ns - self._last_step_ns) / 1_000_000, 3),
                 "metadata": {key: value for key, value in metadata.items() if value is not None},
             }
         )
+        self._last_step_ns = now_ns
 
     def record_tool_result(
         self,
@@ -50,6 +59,11 @@ class AgentState:
 
     def to_dict(self) -> dict[str, Any]:
         return {
+            "run_id": self.run_id,
+            "workflow_version": self.workflow_version,
+            "prompt_version": self.prompt_version,
+            "started_at": self.started_at,
+            "duration_ms": round((time.perf_counter_ns() - self._started_ns) / 1_000_000, 3),
             "user_context": self.user_context,
             "steps": self.steps,
             "patient_profile": self.patient_profile,
@@ -64,3 +78,7 @@ class AgentState:
             "llm": self.llm,
             "tool_results": self.tool_results,
         }
+    run_id: str = field(default_factory=lambda: f"run-{uuid.uuid4().hex}")
+    workflow_version: str = "medical-agent-v1"
+    prompt_version: str = "decision-prompt-v1"
+    started_at: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())

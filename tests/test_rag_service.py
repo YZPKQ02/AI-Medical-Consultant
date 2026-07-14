@@ -32,6 +32,11 @@ class RecordingEmbeddingProvider:
 
 
 class RAGServiceTests(unittest.TestCase):
+    def test_qwen_provider_preserves_explicit_device(self):
+        provider = QwenEmbeddingProvider(enable_local=False, device="cpu")
+
+        self.assertEqual(provider.active_device, "cpu")
+
     def test_default_embedding_provider_is_qwen_adapter(self):
         rag = RAGService(top_k=3, include_builtin=False)
 

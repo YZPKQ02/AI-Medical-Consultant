@@ -130,6 +130,7 @@ class RAGService:
             enable_local=settings.qwen_enable_local,
             query_instruction=settings.embedding_query_instruction,
             local_files_only=settings.qwen_local_files_only,
+            device=settings.qwen_device,
         )
         self.chunks = self._build_chunks() if include_builtin else []
         if index_path:

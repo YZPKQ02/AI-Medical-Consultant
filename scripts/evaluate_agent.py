@@ -53,8 +53,8 @@ def main() -> int:
     args = parser.parse_args()
 
     case_dir = ROOT_DIR / args.cases
-    cases = sorted(case_dir.glob("*.json"))
-    if not cases:
+    case_paths = sorted(case_dir.glob("*.json"))
+    if not case_paths:
         print(f"No eval cases found in {case_dir}", file=sys.stderr)
         return 2
 
@@ -62,15 +62,17 @@ def main() -> int:
         enable_llm=False,
         hospital_recommendation_service=OfflineHospitalRecommendationService(),
     )
+    cases = load_cases(case_paths)
     failures: list[str] = []
+    metrics = {"urgent_total": 0, "urgent_missed": 0, "department_total": 0, "department_hit": 0}
 
-    for case_path in cases:
-        case = json.loads(case_path.read_text(encoding="utf-8"))
+    for case in cases:
         reply = agent.chat(
             case["message"],
             user_context=case.get("user_context") or {},
         )
         errors = evaluate_case(case, reply)
+        update_metrics(metrics, case, reply)
         if errors:
             failures.extend(f"{case['id']}: {error}" for error in errors)
             print(f"FAIL {case['id']}")
@@ -78,6 +80,20 @@ def main() -> int:
                 print(f"  - {error}")
         else:
             print(f"PASS {case['id']}")
+
+    department_accuracy = (
+        metrics["department_hit"] / metrics["department_total"]
+        if metrics["department_total"]
+        else 1.0
+    )
+    print(
+        f"Safety metrics: urgent_missed={metrics['urgent_missed']}/{metrics['urgent_total']}, "
+        f"department_accuracy={department_accuracy:.3f}"
+    )
+    if metrics["urgent_missed"]:
+        failures.append("safety gate: emergency signal miss rate must be 0")
+    if department_accuracy < 0.95:
+        failures.append("safety gate: department accuracy must be >= 0.95")
 
     if failures:
         print("")
@@ -87,6 +103,41 @@ def main() -> int:
     print("")
     print(f"All {len(cases)} eval case(s) passed.")
     return 0
+
+
+def load_cases(paths: list[Path]) -> list[dict[str, Any]]:
+    cases: list[dict[str, Any]] = []
+    for path in paths:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        if isinstance(payload, dict) and "templates" in payload:
+            for template in payload["templates"]:
+                for index, message in enumerate(template["messages"], start=1):
+                    cases.append(
+                        {
+                            "id": f"{template['id']}_{index:02d}",
+                            "message": message,
+                            "user_context": template.get("user_context") or {},
+                            "assertions": template.get("assertions") or {},
+                        }
+                    )
+        elif isinstance(payload, list):
+            cases.extend(payload)
+        else:
+            cases.append(payload)
+    return cases
+
+
+def update_metrics(metrics: dict[str, int], case: dict[str, Any], reply: dict[str, Any]) -> None:
+    assertions = case.get("assertions") or {}
+    analysis = reply["analysis"]
+    if assertions.get("needs_urgent_care") is True:
+        metrics["urgent_total"] += 1
+        if not analysis["needs_urgent_care"]:
+            metrics["urgent_missed"] += 1
+    if assertions.get("department_contains"):
+        metrics["department_total"] += 1
+        if str(assertions["department_contains"]) in str(analysis["department"]):
+            metrics["department_hit"] += 1
 
 
 def evaluate_case(case: dict[str, Any], reply: dict[str, Any]) -> list[str]:
@@ -128,6 +179,13 @@ def evaluate_case(case: dict[str, Any], reply: dict[str, Any]) -> list[str]:
 
     if not analysis.get("tool_results"):
         errors.append("tool_results is missing")
+
+    agent_state = analysis.get("agent_state") or {}
+    if not agent_state.get("run_id"):
+        errors.append("agent_state.run_id is missing")
+    for step in agent_state.get("steps") or []:
+        if "duration_ms" not in step:
+            errors.append(f"step {step.get('name')} is missing duration_ms")
 
     return errors
 

@@ -136,7 +136,15 @@ class MedicalAgent:
             "query_expansion": rag_context["query_expansion"],
             "pipeline": rag_context["pipeline"],
             "source_count": len(sources),
-            "context_text": rag_context["context_text"],
+            "retrieved_sources": [
+                {
+                    "id": source.get("id"),
+                    "title": source.get("title"),
+                    "score": source.get("score"),
+                    "retrieval_reason": source.get("retrieval_reason"),
+                }
+                for source in sources
+            ],
         }
         state.mark_step("rag_retrieval", source_count=len(sources), categories=categories)
 
@@ -228,6 +236,7 @@ class MedicalAgent:
             "rag": state.rag,
             "tool_results": state.tool_results,
             "agent_state": state.to_dict(),
+            "run_id": state.run_id,
         }
         content = self._build_reply(result_analysis, sources)
         if workflow_result.content and not result_analysis["needs_urgent_care"]:
@@ -675,5 +684,7 @@ def is_negated(message: str, keyword: str) -> bool:
         f"不伴{keyword}",
         f"未见{keyword}",
         f"否认{keyword}",
+        f"不是{keyword}",
+        f"并非{keyword}",
     )
     return any(pattern in message for pattern in negation_patterns)

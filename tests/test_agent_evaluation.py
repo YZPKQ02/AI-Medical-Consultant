@@ -24,7 +24,10 @@ class AgentEvaluationTests(unittest.TestCase):
                 "department": "普通内科",
                 "follow_up_questions": ["症状持续多久了？"],
                 "hospital_recommendations": {"status": "missing_city"},
-                "agent_state": {"steps": [{"name": "slot_extraction"}]},
+                "agent_state": {
+                    "run_id": "run-test",
+                    "steps": [{"name": "slot_extraction", "duration_ms": 1.0}],
+                },
                 "tool_results": [{"name": "recommend_hospitals"}],
             },
         }

@@ -234,14 +234,6 @@ class PostgreSQLConsultationStore:
         self._lock = RLock()
         self._conn = psycopg.connect(database_url, row_factory=dict_row)
         self._closed = False
-        self._initialize()
-
-    def _initialize(self) -> None:
-        with self._lock:
-            with self._conn.cursor() as cur:
-                for statement in postgresql_schema_sql():
-                    cur.execute(statement)
-            self._conn.commit()
 
     def count(self) -> int:
         with self._lock:
@@ -420,7 +412,8 @@ class PostgreSQLConsultationStore:
         message_payload: dict[str, Any],
     ) -> None:
         analysis = ensure_dict(message_payload.get("analysis") or {})
-        run_id = f"run-{message_id}"
+        agent_state = ensure_dict(analysis.get("agent_state") or {})
+        run_id = str(agent_state.get("run_id") or f"run-{message_id}")
         risk = ensure_dict(analysis.get("risk") or {})
         cur.execute(
             """

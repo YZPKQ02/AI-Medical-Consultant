@@ -214,6 +214,34 @@ Run offline Agent evaluation cases:
 npm run eval
 ```
 
+## Docker PostgreSQL and Qwen profiles
+
+Docker startup always uses PostgreSQL and runs `alembic upgrade head` before the API starts.
+Choose exactly one Qwen runtime profile:
+
+```powershell
+# CPU inference: portable but materially slower than CUDA.
+$env:QWEN_LOCAL_FILES_ONLY="0"  # first run downloads the model into a named volume
+docker compose --profile cpu up --build -d
+
+# NVIDIA GPU inference through Docker Desktop / WSL 2.
+$env:QWEN_LOCAL_FILES_ONLY="0"
+docker compose --profile gpu up --build -d
+```
+
+Both profiles persist the Hugging Face cache in `huggingface_cache`. After one successful
+download and model load, offline startup can use `QWEN_LOCAL_FILES_ONLY=1`. The application
+will refuse to become ready when local Qwen is required but unavailable. Verify the real
+runtime rather than the configured provider name:
+
+```powershell
+Invoke-RestMethod http://127.0.0.1:3000/api/v1/ready
+Invoke-RestMethod http://127.0.0.1:3000/api/v1/agent/status
+```
+
+Expected fields are `embedding_backend=qwen-local`, `embedding_dimension=1024`,
+`embedding_fallback=false`, and `embedding_device=cpu` or `cuda:0`.
+
 ## Vectorize Documents
 
 Put `.md`, `.txt`, `.png`, `.jpg`, `.jpeg`, `.webp`, or `.bmp` medical knowledge files in `knowledge_base/`, then build the local vector index:
@@ -278,6 +306,7 @@ Current stable frontend-compatible routes:
 Optional FastAPI v1 routes:
 
 - `GET /api/v1/health`
+- `GET /api/v1/ready`
 - `GET /api/v1/knowledge?q=...&top_k=5`
 - `GET /api/v1/agent/status`
 - `POST /api/v1/consultations`
@@ -289,7 +318,8 @@ Optional FastAPI v1 routes:
 
 - Replace the standard-library hash multimodal retriever with Qwen-VL/Qwen Embedding, BioMedCLIP, SentenceTransformer + FAISS, or ChromaDB.
 - Replace anonymous local owner IDs with authenticated users and role-based access.
-- Add schema migrations for PostgreSQL instead of boot-time `CREATE TABLE IF NOT EXISTS`.
+- Have the 100-case engineering regression set independently reviewed and expanded by clinicians.
+- Add backup retention automation and a scheduled restore drill for PostgreSQL.
 - Expand the LLM provider layer with streaming SSE/WebSocket output.
 
 ## RAG Pipeline

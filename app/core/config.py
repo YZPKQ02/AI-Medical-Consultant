@@ -8,6 +8,7 @@ from urllib.parse import parse_qs, urlparse
 class Settings:
     app_name: str = "AI Medical Consultant"
     app_version: str = "0.1.0"
+    app_environment: str = "development"
     host: str = "0.0.0.0"
     port: int = 3000
     cors_origins: tuple[str, ...] = ("http://127.0.0.1:3000", "http://localhost:3000")
@@ -25,6 +26,7 @@ class Settings:
     )
     qwen_enable_local: bool = False
     qwen_local_files_only: bool = False
+    qwen_device: str = ""
     agent_llm_enabled: bool = False
     llm_model: str = "deepseek-v4-flash"
     llm_base_url: str = ""
@@ -38,10 +40,13 @@ class Settings:
     amap_web_service_key: str = ""
     hospital_recommender_limit: int = 5
     hospital_recommender_timeout_seconds: int = 5
+    require_postgres: bool = False
+    require_qwen: bool = False
 
 
 def get_settings() -> Settings:
     return Settings(
+        app_environment=os.getenv("APP_ENVIRONMENT", "development").strip().lower(),
         host=os.getenv("HOST", "0.0.0.0"),
         port=int(os.getenv("PORT", "3000")),
         cors_origins=parse_csv_env(
@@ -65,6 +70,7 @@ def get_settings() -> Settings:
         qwen_enable_local=os.getenv("QWEN_ENABLE_LOCAL", "0").lower() in {"1", "true", "yes"},
         qwen_local_files_only=os.getenv("QWEN_LOCAL_FILES_ONLY", "0").lower()
         in {"1", "true", "yes"},
+        qwen_device=os.getenv("QWEN_DEVICE", "").strip(),
         agent_llm_enabled=os.getenv("AGENT_LLM_ENABLED", "0").lower() in {"1", "true", "yes"},
         llm_model=os.getenv("DEEPSEEK_MODEL", os.getenv("LLM_MODEL", "deepseek-v4-flash")),
         llm_base_url=os.getenv("DEEPSEEK_BASE_URL", os.getenv("LLM_BASE_URL", "")),
@@ -80,7 +86,16 @@ def get_settings() -> Settings:
         or extract_amap_key_from_mcp_url(os.getenv("AMAP_MCP_URL", "")),
         hospital_recommender_limit=int(os.getenv("HOSPITAL_RECOMMENDER_LIMIT", "5")),
         hospital_recommender_timeout_seconds=int(os.getenv("HOSPITAL_RECOMMENDER_TIMEOUT_SECONDS", "5")),
+        require_postgres=env_bool("REQUIRE_POSTGRES", default=False),
+        require_qwen=env_bool("REQUIRE_QWEN", default=False),
     )
+
+
+def env_bool(name: str, *, default: bool = False) -> bool:
+    value = os.getenv(name)
+    if value is None:
+        return default
+    return value.strip().lower() in {"1", "true", "yes", "on"}
 
 
 def parse_csv_env(value: str) -> tuple[str, ...]:
