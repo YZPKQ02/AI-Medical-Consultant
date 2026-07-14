@@ -12,6 +12,9 @@
     "compose:up": "docker compose up --build",
     "vectorize": ".venv\\Scripts\\python.exe -m scripts.vectorize_documents",
     "eval": ".venv\\Scripts\\python.exe scripts\\evaluate_agent.py",
+    "db:upgrade": ".venv\\Scripts\\python.exe -m alembic upgrade head",
+    "db:downgrade": ".venv\\Scripts\\python.exe -m alembic downgrade -1",
+    "test:migrations": ".venv\\Scripts\\python.exe scripts\\test_postgres_migrations.py",
     "test": "node --test tests/*.test.js && .venv\\Scripts\\python.exe -m unittest discover -s tests -p \"test_*.py\""
   },
   "engines": {

@@ -64,6 +64,19 @@ class KnowledgeBaseTests(unittest.TestCase):
 
 
 class MedicalAgentTests(unittest.TestCase):
+    def test_symptom_aliases_preserve_triage_rules(self):
+        agent = MedicalAgent()
+
+        self.assertTrue(agent.chat("胸口疼痛无法缓解")["analysis"]["needs_urgent_care"])
+        self.assertIn("咳嗽", agent.chat("干咳三天")["analysis"]["symptoms"])
+        self.assertIn("发热", agent.chat("低热两天")["analysis"]["symptoms"])
+
+    def test_explicit_negation_does_not_trigger_emergency_signal(self):
+        agent = MedicalAgent()
+        reply = agent.chat("腹痛但不是剧烈腹痛")
+
+        self.assertFalse(reply["analysis"]["needs_urgent_care"])
+
     def test_agent_flags_emergency_chest_pain(self):
         agent = MedicalAgent()
         reply = agent.chat("胸痛伴呼吸困难和大汗")

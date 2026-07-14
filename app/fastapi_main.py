@@ -17,7 +17,12 @@ except ImportError as exc:  # pragma: no cover - depends on optional runtime dep
 from app.api.v1 import agent, consult, knowledge, system
 from app.api.ws import websocket_endpoint
 from app.core.config import settings
-from app.services.runtime import consultation_service
+from app.services.runtime import (
+    consultation_service,
+    runtime_readiness,
+    storage_backend_name,
+    validate_runtime_requirements,
+)
 
 
 ROOT_DIR = Path(__file__).resolve().parent.parent
@@ -26,9 +31,17 @@ PUBLIC_DIR = ROOT_DIR / "public"
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+    validate_runtime_requirements()
+    readiness = runtime_readiness()
+    embedding = consultation_service.agent.rag_service.embedding_provider
     print("=" * 50, flush=True)
     print(f"Starting {settings.app_name} FastAPI service", flush=True)
     print(f"Version: {settings.app_version}", flush=True)
+    print(f"Environment: {settings.app_environment}", flush=True)
+    print(f"Storage: {storage_backend_name()}", flush=True)
+    print(f"Database ready: {readiness['checks']['database']['ready']}", flush=True)
+    print(f"Embedding: {getattr(embedding, 'backend', embedding.name)}", flush=True)
+    print(f"Embedding fallback: {bool(getattr(embedding, 'is_fallback', False))}", flush=True)
     print(f"Loaded consultations: {consultation_service.count()}", flush=True)
     print("=" * 50, flush=True)
     yield

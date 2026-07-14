@@ -1,0 +1,25 @@
+{
+  "description": "Engineering regression set generated from 20 curated rule scenarios x 5 language variants. Requires independent clinical review before medical claims.",
+  "templates": [
+    {"id":"emergency_chest_pain","messages":["胸痛持续30分钟","突然胸痛而且越来越重","活动后出现胸痛","胸痛伴大汗","胸口疼痛无法缓解"],"user_context":{"age":"56"},"assertions":{"needs_urgent_care":true,"risk_level_min":4,"department_contains":"急诊"}},
+    {"id":"emergency_dyspnea","messages":["突然呼吸困难","呼吸困难越来越严重","现在呼吸困难说话费力","夜间突发呼吸困难","呼吸困难伴胸闷"],"assertions":{"needs_urgent_care":true,"risk_level_min":4,"department_contains":"急诊"}},
+    {"id":"emergency_syncope","messages":["刚才晕厥了一次","突然晕厥现在刚醒","走路时发生晕厥","晕厥后仍然头晕","今天反复晕厥"],"assertions":{"needs_urgent_care":true,"risk_level_min":4,"department_contains":"急诊"}},
+    {"id":"emergency_seizure","messages":["刚才突然抽搐","全身抽搐持续两分钟","发热后出现抽搐","今天第二次抽搐","抽搐后意识模糊"],"assertions":{"needs_urgent_care":true,"risk_level_min":4,"department_contains":"急诊"}},
+    {"id":"emergency_hemiplegia","messages":["突然右侧偏瘫","早晨出现左侧偏瘫","偏瘫伴口角歪斜","突然偏瘫无法站立","一侧肢体偏瘫刚发生"],"assertions":{"needs_urgent_care":true,"risk_level_min":4,"department_contains":"急诊"}},
+    {"id":"emergency_speech","messages":["突然言语不清","言语不清伴手臂无力","刚刚开始言语不清","老人突然言语不清","言语不清而且口角歪"],"assertions":{"needs_urgent_care":true,"risk_level_min":4,"department_contains":"急诊"}},
+    {"id":"emergency_bleeding","messages":["伤口大出血止不住","突然大出血","摔倒后腿部大出血","大出血伴头晕","手臂割伤发生大出血"],"assertions":{"needs_urgent_care":true,"risk_level_min":4,"department_contains":"急诊"}},
+    {"id":"emergency_abdominal","messages":["突然剧烈腹痛","剧烈腹痛伴呕吐","持续剧烈腹痛无法缓解","夜间出现剧烈腹痛","剧烈腹痛并且冒冷汗"],"assertions":{"needs_urgent_care":true,"risk_level_min":4,"department_contains":"急诊"}},
+    {"id":"emergency_allergy","messages":["吃药后严重过敏","严重过敏伴呼吸不畅","注射后发生严重过敏","全身皮疹并且喉咙紧缩","吃花生后喉咙紧缩"],"assertions":{"needs_urgent_care":true,"risk_level_min":4,"department_contains":"急诊"}},
+    {"id":"emergency_hemoptysis","messages":["突然咯血","咳嗽后出现咯血","今天反复咯血","咯血伴呼吸困难","大量咯血并头晕"],"assertions":{"needs_urgent_care":true,"risk_level_min":4,"department_contains":"急诊"}},
+    {"id":"routine_headache","messages":["轻微头痛一天","熬夜后头痛","间断头痛两天","头痛但没有意识不清","工作紧张时头痛"],"assertions":{"needs_urgent_care":false,"risk_level_min":2,"department_contains":"神经"}},
+    {"id":"routine_cough","messages":["咳嗽两天","感冒后一直咳嗽","夜间咳嗽比较多","干咳三天","咳嗽但没有呼吸困难"],"assertions":{"needs_urgent_care":false,"risk_level_min":2,"department_contains":"呼吸"}},
+    {"id":"routine_fever","messages":["发热一天体温38度","低热两天","发热伴轻微乏力","昨晚开始发热","发热但没有抽搐"],"assertions":{"needs_urgent_care":false,"risk_level_min":2,"department_contains":"感染"}},
+    {"id":"routine_abdominal","messages":["轻微腹痛半天","饭后腹痛","间断腹痛两天","腹痛但不是剧烈腹痛","肚脐周围腹痛"],"assertions":{"needs_urgent_care":false,"risk_level_min":2,"department_contains":"消化"}},
+    {"id":"routine_diarrhea","messages":["腹泻一天","吃坏东西后腹泻","今天腹泻三次","腹泻伴轻微腹痛","水样腹泻半天"],"assertions":{"needs_urgent_care":false,"risk_level_min":2,"department_contains":"消化"}},
+    {"id":"routine_vomiting","messages":["呕吐两次","饭后出现呕吐","恶心呕吐一天","呕吐但没有剧烈腹痛","早晨呕吐一次"],"assertions":{"needs_urgent_care":false,"risk_level_min":2,"department_contains":"消化"}},
+    {"id":"routine_rash","messages":["手臂皮疹有点痒","皮疹出现两天","腿上有少量皮疹","皮疹但没有呼吸困难","换洗衣液后出现皮疹"],"assertions":{"needs_urgent_care":false,"risk_level_min":1,"department_contains":"皮肤"}},
+    {"id":"routine_urinary","messages":["最近尿频","尿频持续三天","夜间尿频明显","尿频伴轻微尿痛","喝水不多但尿频"],"assertions":{"needs_urgent_care":false,"risk_level_min":2,"department_contains":"泌尿"}},
+    {"id":"routine_hypertension","messages":["高血压最近控制不好","测出高血压但没有胸痛","高血压需要复查","有高血压病史","高血压用药咨询"],"assertions":{"needs_urgent_care":false,"risk_level_min":2,"department_contains":"心内"}},
+    {"id":"routine_glucose","messages":["血糖最近偏高","空腹血糖升高","血糖控制不稳定","想咨询血糖问题","体检发现血糖高"],"assertions":{"needs_urgent_care":false,"risk_level_min":2,"department_contains":"内分泌"}}
+  ]
+}

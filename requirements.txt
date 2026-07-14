@@ -3,6 +3,7 @@ fastapi>=0.118,<1.0
 uvicorn[standard]>=0.36,<1.0
 mcp>=1.16,<2.0
 psycopg[binary]>=3.2,<4.0
+alembic>=1.13,<2.0
 torch>=2.7,<3.0
 transformers>=4.51,<6.0
 sentence-transformers>=5.0,<6.0

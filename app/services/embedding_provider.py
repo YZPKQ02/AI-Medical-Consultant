@@ -106,6 +106,7 @@ class QwenEmbeddingProvider:
         enable_local: bool = False,
         query_instruction: str = "",
         local_files_only: bool = False,
+        device: str = "",
     ):
         self.vector_dim = vector_dim
         self.text_model = text_model
@@ -113,6 +114,7 @@ class QwenEmbeddingProvider:
         self.enable_local = enable_local
         self.query_instruction = query_instruction
         self.local_files_only = local_files_only
+        self.device = device or None
         self.fallback = HashEmbeddingProvider(vector_dim=vector_dim)
         self.backend = "qwen-local" if enable_local else "qwen-configured-fallback-hash"
         self._text_model_handle = None
@@ -120,6 +122,15 @@ class QwenEmbeddingProvider:
     @property
     def is_fallback(self) -> bool:
         return self._text_model_handle is None
+
+    @property
+    def active_device(self) -> str | None:
+        if self._text_model_handle is None:
+            return self.device
+        return str(getattr(self._text_model_handle, "device", self.device or "unknown"))
+
+    def ensure_ready(self) -> bool:
+        return self._ensure_text_model_loaded()
 
     def embed_text(self, text: str, tokenizer: Callable[[str], list[str]]) -> tuple[float, ...]:
         return self.embed_document(text, tokenizer)
@@ -182,6 +193,7 @@ class QwenEmbeddingProvider:
             self._text_model_handle = SentenceTransformer(
                 self.text_model,
                 local_files_only=self.local_files_only,
+                device=self.device,
             )
             self.backend = "qwen-local"
             return True
@@ -198,6 +210,7 @@ def create_embedding_provider(
     enable_local: bool = False,
     query_instruction: str = "",
     local_files_only: bool = False,
+    device: str = "",
 ):
     normalized = provider.strip().lower()
     if normalized == "qwen":
@@ -208,6 +221,7 @@ def create_embedding_provider(
             enable_local=enable_local,
             query_instruction=query_instruction,
             local_files_only=local_files_only,
+            device=device,
         )
     if normalized in {"hash", "hash-multimodal"}:
         return HashEmbeddingProvider(vector_dim=vector_dim)

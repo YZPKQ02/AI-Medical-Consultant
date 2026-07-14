@@ -1,3 +1,38 @@
+x-app-environment: &app-environment
+  APP_ENVIRONMENT: docker
+  HOST: 0.0.0.0
+  PORT: 3000
+  DATABASE_URL: postgresql://ai_medical:ai_medical_dev_password@db:5432/ai_medical_consultant
+  REQUIRE_POSTGRES: "1"
+  EMBEDDING_PROVIDER: qwen
+  QWEN_ENABLE_LOCAL: "1"
+  QWEN_LOCAL_FILES_ONLY: ${QWEN_LOCAL_FILES_ONLY:-0}
+  REQUIRE_QWEN: "1"
+  HF_HOME: /models/huggingface
+  RAG_INDEX_PATH: storage/vector_index.json
+  HOSPITAL_RECOMMENDER_ENABLED: ${HOSPITAL_RECOMMENDER_ENABLED:-0}
+  AMAP_MCP_URL: ${AMAP_MCP_URL:-}
+  AMAP_WEB_SERVICE_KEY: ${AMAP_WEB_SERVICE_KEY:-}
+  AGENT_LLM_ENABLED: ${AGENT_LLM_ENABLED:-0}
+  DEEPSEEK_BASE_URL: ${DEEPSEEK_BASE_URL:-}
+  DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:-}
+
+x-app-common: &app-common
+  build: .
+  ports:
+    - "3000:3000"
+  volumes:
+    - huggingface_cache:/models/huggingface
+  depends_on:
+    db:
+      condition: service_healthy
+  healthcheck:
+    test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:3000/api/v1/ready', timeout=5)"]
+    interval: 15s
+    timeout: 10s
+    retries: 20
+    start_period: 180s
+
 services:
   db:
     image: postgres:16-alpine
@@ -15,24 +50,21 @@ services:
       timeout: 5s
       retries: 10
 
-  app:
-    build: .
+  app-cpu:
+    <<: *app-common
+    profiles: ["cpu"]
     environment:
-      HOST: 0.0.0.0
-      PORT: 3000
-      DATABASE_URL: postgresql://ai_medical:ai_medical_dev_password@db:5432/ai_medical_consultant
-      RAG_INDEX_PATH: storage/vector_index.json
-      HOSPITAL_RECOMMENDER_ENABLED: ${HOSPITAL_RECOMMENDER_ENABLED:-0}
-      AMAP_MCP_URL: ${AMAP_MCP_URL:-}
-      AMAP_WEB_SERVICE_KEY: ${AMAP_WEB_SERVICE_KEY:-}
-      AGENT_LLM_ENABLED: ${AGENT_LLM_ENABLED:-0}
-      DEEPSEEK_BASE_URL: ${DEEPSEEK_BASE_URL:-}
-      DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:-}
-    ports:
-      - "3000:3000"
-    depends_on:
-      db:
-        condition: service_healthy
+      <<: *app-environment
+      QWEN_DEVICE: cpu
+
+  app-gpu:
+    <<: *app-common
+    profiles: ["gpu"]
+    environment:
+      <<: *app-environment
+      QWEN_DEVICE: cuda:0
+    gpus: all
 
 volumes:
   postgres_data:
+  huggingface_cache:
